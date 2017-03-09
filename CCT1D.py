@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=0.9
+version=1.0
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of one-dimensional concrete curing
@@ -75,7 +75,7 @@ version=0.9
 #    If so, get inputs and simulation parameters from external file(s)
 #    which would serve as a record of the simulations run
 #    (decided not to for now; not forseeing a need to sweep through parameters at present)
-# -  Put under version control
+# -  DONE Put under version control
 # -  Implement models of the evolution of thermal conductivity 
 #    and specific heat
 # -  Incorporate into a Beaker/Jupyter notebook(s) to enable visualization
@@ -124,23 +124,29 @@ Rgas = 8.314 * (ureg.joule/ureg.mole/ureg.degK)     # gas constant
 
 
 
-# Material parameters
-rho = 2298 * (ureg.kg/ureg.meter**3)                # density
-cv  = 1066 * (ureg.joule/ureg.kg/ureg.degK)         # specific heat (at const. volume)
-k   = 1.83 * (ureg.watt/ureg.meter/ureg.degK)       # thermal conductivity
-# cvu = 1065 * (ureg.joule/ureg.kg/ureg.degK)         # ultimate specific heat (at const. volume) at fully hydrated condition
-# ku  = 1.66 * (ureg.watt/ureg.meter/ureg.degK)       # ultimate thermal conductivity at fully hydrated condition
+# Concrete thermal parameters
+Vunit = 1 * (ureg.meter**3)                         # a notional unit volume; shouldn't need to change this
+mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3)
+cvC   = 1140 * (ureg.joule/ureg.kg/ureg.degK)       # specific heat of cement
+mAg   = 1701 * (ureg.kg)                            # mass of aggregate (per m^3)
+cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of aggregate
+mH2O  = 183.9 * (ureg.kg)                           # mass of water (per m^3)
+cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # specific heat of water
+mCnc  = mC + mAg + mH2O                             # mass of concrete
+rho   = mCnc/Vunit                         # density of concrete
+ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductivity at fully hydrated condition
 
 
 
-# Hydration parameters
+# Cement hydration parameters
 Hcem    = 468.43 * (ureg.joule/ureg.gram)           # heat of hydration of cement
 Hu      = 468 * (ureg.joule/ureg.gram)              # total (ultimate) heat of hydration of cement+scm
 Ea      = 39697 * (ureg.joule/ureg.mole)            # activation energy
 alphau  = 0.773                                     # ultimate degree of hydration (is a fraction, thus unitless)
 tau_h   = 14.593 * (ureg.hour)                      # hydration time parameter
 beta    = 0.793                                     # hydration shape parameter (unitless)
-Cc      = 413513 * (ureg.gram/ureg.m**3)            # cementitious material content per unit volume of concrete
+Cc      = mC/Vunit                                  # cementitious material content per unit volume of concrete
+Cc.ito(ureg.gram/ureg.meter**3)
 
 
 
@@ -158,12 +164,13 @@ Ni   = Nn-1                                         # node index
 z    = np.linspace(0, thk, Nn) * ureg.meter         # mesh points in space; z[0]=0 is the bottom, z[Nn] = thk is the top
 
 dt_h   = 0.05                                       # timestep, hours
-tend_h = 17#5                                        # simulation end time, hours
+tend_h = 175                                        # simulation end time, hours
 t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
 
 
 
 # Some unit conversions, for convenience mostly
+Tinit_degC = Tinit.to('degC')
 z_ft  = z.to(ureg.ft)                               
 t_day = t_h.to(ureg.day)
 dt_h  = dt_h * (ureg.hour)
@@ -172,7 +179,8 @@ dt_s  = dt_h.to(ureg.second)
 
 
 # A little prep work
-thermalDiffusivity = k/(cv*rho)
+cv = (1/mCnc) * (mC*cvC + mAg*cvAg + mH2O*cvH2O)     # initial specific heat
+thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
 
@@ -203,13 +211,13 @@ else:
     # initialize internal energy generation/a.k.a. heat of hydration vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
     egen = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
 
-    # initialize specific heat vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
-    # cv = np.zeros(Nn+1) * (ureg.joule/ureg.kg/ureg.degK)
-    # cv[0,:] = 
+    # initialize thermal conductivity (ONLY CURRENT VALUE is STORED IN MEMORY)
+    # here we assume a spatially constant but temporally variable thermal conductivity
+    # so use a spatial average of degree of hydration to get the conductivity
+    k = ku*(1.33 - 0.33*np.average(alpha))
 
-    # initialize thermal conductivity vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
-    # k = np.zeros(Nn+1) * (ureg.watt/ureg.meter/ureg.degK)
-    # k[0,:] = ku*1.33
+    # initial specific heat: we've already done it before computing the diffusionNumber
+    # (like thermal conductivity, assume spatially constant but temporally varying)
 
     # print('Simulating...')
     bar = progressbar.ProgressBar(widgets=[progressbar.Percentage(), ' (', progressbar.SimpleProgress(), ') ', progressbar.Bar(), ' ', progressbar.Timer(), '  ', progressbar.ETA()], max_value=t_h.size)
@@ -232,6 +240,10 @@ else:
         alpha[:] = alphau * np.exp(-1*(tau_h/te_h[:])**beta)
         egen[:]  = ( Hu * Cc * ((tau_h/te_h[:])**beta) * (beta/te_h[:]) * alpha[:] * np.exp( (Ea/Rgas)*((1/Tr) - (1/T[nt, :])) ) )
 
+        # some stuff for the next time step
+        k = ku*(1.33 - 0.33*np.average(alpha))
+        coeff = (8.4*(Tinit_degC.magnitude) + 339) * ((ureg.joule/ureg.kg/ureg.degK))
+        cv = (1/mCnc) * (mC*np.average(alpha)*coeff + mC*(1-np.average(alpha))*cvC + mAg*cvAg + mH2O*cvH2O)
         egen.ito(ureg.watt/ureg.meter**3)
 
         bar.update(nt+1)
@@ -260,9 +272,15 @@ else:
     metadata = list(zip(labels,values))
     df_metadata = df_inputs = pd.DataFrame(data = metadata, columns=['Parameter', 'Value'])
 
-    labels = ['rho_kg*m-3', 
-              'cv_J*kg-1*K-1', 
-              'k_W*m-1*K-1',
+    labels = ['Vunit',
+              'mC',   
+              'cvC',  
+              'mAg',  
+              'cvAg', 
+              'mH2O', 
+              'cvH2O',
+              'rho_kg*m-3', 
+              'ku_W*m-1*K-1',
               'Hcem_J*g-1', 
               'Hu_J*g-1',   
               'Ea_J*mol-1', 
@@ -277,9 +295,15 @@ else:
               'timestep_h',
               'stop_h'
               ]
-    values = [rho.magnitude, 
-              cv.magnitude, 
-              k.magnitude, 
+    values = [Vunit.magnitude,
+              mC.magnitude,
+              cvC.magnitude,
+              mAg.magnitude,
+              cvAg.magnitude,
+              mH2O.magnitude,
+              cvH2O.magnitude,
+              rho.magnitude, 
+              ku.magnitude, 
               Hcem.magnitude, 
               Hu.magnitude, 
               Ea.magnitude,    
