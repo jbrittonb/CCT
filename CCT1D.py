@@ -32,9 +32,6 @@ version=1.0
 # Assume one end (z=0) is adiabatic, and the other end
 # (z=zmax) is under a convective boundary condition, with
 # the ambient temperature being constant
-#
-# Assumes a constant specific heat 
-# and constant thermal conductivity
 # 
 # 
 # 
