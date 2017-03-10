@@ -73,7 +73,7 @@ version=1.0
 #    which would serve as a record of the simulations run
 #    (decided not to for now; not forseeing a need to sweep through parameters at present)
 # -  DONE Put under version control
-# -  Implement models of the evolution of thermal conductivity 
+# -  DONE Implement models of the evolution of thermal conductivity 
 #    and specific heat
 # -  Incorporate into a Beaker/Jupyter notebook(s) to enable visualization
 #    and comparison with experiments or FEA
