@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=1.0
+version=1.01
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of one-dimensional concrete curing
@@ -32,6 +32,7 @@ version=1.0
 # Assume one end (z=0) is adiabatic, and the other end
 # (z=zmax) is under a convective boundary condition, with
 # the ambient temperature being constant
+#
 # 
 # 
 # 
@@ -61,32 +62,6 @@ version=1.0
 # For some other variables, other units are used
 # These reference the unit in the variable name, e.g. z_ft
 # 
-# 
-# 
-# Roadmap
-# .......................................................
-# -  DONE (v0.9): Enable saving of metadata 
-#    (inputs, simulation parameters, version used, date/time of simulation run)
-#    in an Excel sheet along with simulation data
-# -  DONE Decide: should this be implemented as a function?
-#    If so, get inputs and simulation parameters from external file(s)
-#    which would serve as a record of the simulations run
-#    (decided not to for now; not forseeing a need to sweep through parameters at present)
-# -  DONE Put under version control
-# -  DONE Implement models of the evolution of thermal conductivity 
-#    and specific heat
-# -  Incorporate into a Beaker/Jupyter notebook(s) to enable visualization
-#    and comparison with experiments or FEA
-# -  Package the experimental data in a form convenient for such comparisons
-#    (that is, make it easy to read in a Pandas dataFrame)
-# -  Implement a model of heat transfer through the formwork; keep this program
-#    as a 1D simulation but incorporate a 'loss term' so that the model will be
-#    quasi-1D (similarly to #6 below)
-# -  Implement a sink term to roughly model a cooling system; set this up
-#    basically as a 'negative egen', i.e. a negative W/m^3 that removes thermal
-#    power, but doesn't model stuff like water flowing through steel pipes. This 
-#    thus models the ideal effect of a cooling system, but not the cooling system
-#    itself.
 # 
 #-----------------------------------------------------------------------------
 
@@ -138,10 +113,10 @@ ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductiv
 # Cement hydration parameters
 Hcem    = 468.43 * (ureg.joule/ureg.gram)           # heat of hydration of cement
 Hu      = 468 * (ureg.joule/ureg.gram)              # total (ultimate) heat of hydration of cement+scm
-Ea      = 39697 * (ureg.joule/ureg.mole)            # activation energy
-alphau  = 0.773                                     # ultimate degree of hydration (is a fraction, thus unitless)
-tau_h   = 14.593 * (ureg.hour)                      # hydration time parameter
-beta    = 0.793                                     # hydration shape parameter (unitless)
+Ea      = 33826 * (ureg.joule/ureg.mole)            # activation energy
+alphau  = 0.742                                     # ultimate degree of hydration (is a fraction, thus unitless)
+tau_h   = 17.483 * (ureg.hour)                      # hydration time parameter
+beta    = 1.065                                     # hydration shape parameter (unitless)
 Cc      = mC/Vunit                                  # cementitious material content per unit volume of concrete
 Cc.ito(ureg.gram/ureg.meter**3)
 
@@ -197,7 +172,7 @@ if diffusionNumber >= 0.5:
 else:
     # initialize temperature array
     T = np.zeros((t_h.size, z.size)) * ureg.degK
-    T[0,:] = Tinit
+    T[0,:] = Tinit    
 
     # initialize equivalent age vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
     te_h = np.zeros(Nn) * ureg.hour
@@ -216,13 +191,28 @@ else:
     # initial specific heat: we've already done it before computing the diffusionNumber
     # (like thermal conductivity, assume spatially constant but temporally varying)
 
-    # print('Simulating...')
+    # initialize vectors for variables for adiabatic conditions
+    Tadbtc = np.zeros(t_h.size) * ureg.degK
+    Tadbtc[0] = Tinit
+
+    teadbtc_h = np.zeros(t_h.size)  * ureg.hour
+    alphaadbtc = np.zeros(t_h.size)
+    
+    egenadbtc = np.zeros(t_h.size) * (ureg.watt/ureg.meter**3)
+    
+    egenadbtcCuml = np.zeros(t_h.size) * (ureg.joule/ureg.meter**3)         # egen integrated over time under adiabatic conditions
+    egenadbtcCumlTrap = np.zeros(t_h.size) * (ureg.joule/ureg.meter**3)     # egen numerically integrated over time under adiabatic conditions
+    
+    egenadbtcTot = Hu * Cc * alphau                                         # total energy released at final hydration; egen integrated over all time
+    egenadbtcTot.ito(ureg.MJ/ureg.meter**3)
+
+
+
     bar = progressbar.ProgressBar(widgets=[progressbar.Percentage(), ' (', progressbar.SimpleProgress(), ') ', progressbar.Bar(), ' ', progressbar.Timer(), '  ', progressbar.ETA()], max_value=t_h.size)
 
 
-    # now for the good stuff
-    # start = timer()
-    for nt in range (1, t_h.size):                   # time loop
+    # now for the good stuff - a time loop!!
+    for nt in range (1, t_h.size):
         # bottom adiabatic end; @ z=0
         T[nt, 0] = (dt_s/(cv*rho*dz))*(k/dz)*(T[nt-1, 1] - T[nt-1, 0]) + (dt_s/(cv*rho))*egen[0] + T[nt-1, 0]
         
@@ -232,30 +222,61 @@ else:
         # top end with convection boundary condition, @ z=z[Nn]
         T[nt, Ni] = (dt_s/(cv*rho*dz))*(hconv*(Tamb - T[nt-1, Ni]) + (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) ) + (dt_s/(cv*rho))*egen[Ni] + T[nt-1, Ni]
 
+        # compute the adiabatic temperature
+        Tadbtc[nt] = (egenadbtc[nt-1]/(rho*cv))*dt_s + Tadbtc[nt-1]
+
         # update equivalent age, degree of hydration, and internal energy generation egen
         te_h[:]  = te_h[:] + dt_h*np.exp( -(Ea/Rgas)*( (1/T[nt,:]) - (1/Tr) ) )
         alpha[:] = alphau * np.exp(-1*(tau_h/te_h[:])**beta)
         egen[:]  = ( Hu * Cc * ((tau_h/te_h[:])**beta) * (beta/te_h[:]) * alpha[:] * np.exp( (Ea/Rgas)*((1/Tr) - (1/T[nt, :])) ) )
 
+        # update other adiabatic variables for next time step
+        teadbtc_h[nt]  = teadbtc_h[nt-1] + dt_h*np.exp( -(Ea/Rgas)*( (1/Tadbtc[nt]) - (1/Tr) ) )
+        alphaadbtc[nt] = alphau * np.exp(-1*(tau_h/teadbtc_h[nt])**beta)
+        egenadbtc[nt]  = ( Hu * Cc * ((tau_h/teadbtc_h[nt])**beta) * (beta/teadbtc_h[nt]) * alphaadbtc[nt] * np.exp( (Ea/Rgas)*((1/Tr) - (1/Tadbtc[nt])) ) )
+        egenadbtcCuml[nt] = Hu * Cc * alphaadbtc[nt]
+        egenadbtcCumlTrap[nt] = egenadbtcCumlTrap[nt-1] + 0.5*dt_s*(egenadbtc[nt-1] + egenadbtc[nt]) 
+
         # some stuff for the next time step
         k = ku*(1.33 - 0.33*np.average(alpha))
         coeff = (8.4*(Tinit_degC.magnitude) + 339) * ((ureg.joule/ureg.kg/ureg.degK))
         cv = (1/mCnc) * (mC*np.average(alpha)*coeff + mC*(1-np.average(alpha))*cvC + mAg*cvAg + mH2O*cvH2O)
+
+
+
+        # only doing this to 'clean up' the units;
+        # after the calculation of the next egen, it's units are still W/m^-3,
+        # but expressed as an ugly combination of other more basic units
         egen.ito(ureg.watt/ureg.meter**3)
+        egenadbtc.ito(ureg.watt/ureg.meter**3)
+        egenadbtcCuml.ito(ureg.joule/ureg.meter**3)
 
         bar.update(nt+1)
 
 
-    # end = timer()
-    # print(end - start)  
 
-    # convert temperatures to degrees Celsius for convenience
-    T.ito(ureg.degC)
+
+
+
+
+
+
+    # -----------------------------------
+    # Some cleanup & write out the data
+    # -----------------------------------
 
     # time simulation ended; used for archiving results
     timeOfThisSim = strftime("%d%b%Y_%H.%M.%S", localtime())
 
-    # bundle parameters/inputs etc. into a Pandas dataframe...
+    # some unit converstions for convenience
+    T.ito(ureg.degC)
+    Tadbtc.ito(ureg.degC)
+    egenadbtcCuml.ito(ureg.MJ/ureg.meter**3)
+    egenadbtcCumlTrap.ito(ureg.MJ/ureg.meter**3)
+
+
+
+    # bundle metadata into a Pandas dataframe...
     labels = ['date & time simulation ended',
               'CCT1D version',
               'note',
@@ -269,6 +290,10 @@ else:
     metadata = list(zip(labels,values))
     df_metadata = df_inputs = pd.DataFrame(data = metadata, columns=['Parameter', 'Value'])
 
+
+
+
+    # ...bundle inputs into a Pandas dataframe...
     labels = ['Vunit',
               'mC',   
               'cvC',  
@@ -290,7 +315,8 @@ else:
               'hconv_W*m-2*K-1',  
               'thickness_m',
               'timestep_h',
-              'stop_h'
+              'stop_h',
+              'egenadbtcTot_MJ*m-3'
               ]
     values = [Vunit.magnitude,
               mC.magnitude,
@@ -314,12 +340,25 @@ else:
               thk,
               dt_h.magnitude,
               tend_h,
+              egenadbtcTot.magnitude
               ]
     inputs = list(zip(labels,values))
     df_inputs = pd.DataFrame(data = inputs, columns=['Parameter', 'Value'])
     
-    # ...convert data to a Pandas dataframe... 
+
+
+
+    # ...convert temperature data to a Pandas dataframe... 
     df_T = pd.DataFrame(T.magnitude, index=t_h, columns=z)
+
+    # ...convert adiabatic variables to a Pandas dataframe...
+    df_adbtc = pd.DataFrame(data=[t_h.magnitude, alphaadbtc, teadbtc_h.magnitude, egenadbtc.magnitude, Tadbtc.magnitude, egenadbtcCuml.magnitude, egenadbtcCumlTrap.magnitude], 
+                             index=['t_h', 'alphaadbtc', 'teadbtc_h', 'egenadbtc_W*m-3', 'Tadbtc_degC', 'egenadbtcCuml_MJ*m-3', 'egenadbtcCumlTrap_MJ*m-3']
+                            )
+    df_adbtc = df_adbtc.transpose()
+
+
+
 
     # ...and store results in an Excel file
     fileNameBase = 'CCT1D_SimRslt_'
@@ -328,6 +367,7 @@ else:
         df_metadata.to_excel(writer, sheet_name='Metadata')
         df_inputs.to_excel(writer, sheet_name='Inputs')
         df_T.to_excel(writer, sheet_name='SimTempsDegC')
+        df_adbtc.to_excel(writer, sheet_name='AdiabaticConds')
 
 
 
