@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=1.01
+version=1.02
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of one-dimensional concrete curing
@@ -130,10 +130,11 @@ hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 
 # Simulation Parameters
-thk  = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
+zmax = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
 Nn   = 23                                           # number of nodes
 Ni   = Nn-1                                         # node index 
-z    = np.linspace(0, thk, Nn) * ureg.meter         # mesh points in space; z[0]=0 is the bottom, z[Nn] = thk is the top
+dz   = zmax/Nn                                      # thickness of each 'layer'
+z    = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
 
 dt_h   = 0.05                                       # timestep, hours
 tend_h = 175                                        # simulation end time, hours
@@ -294,29 +295,30 @@ else:
 
 
     # ...bundle inputs into a Pandas dataframe...
-    labels = ['Vunit',
-              'mC',   
-              'cvC',  
-              'mAg',  
-              'cvAg', 
-              'mH2O', 
-              'cvH2O',
-              'rho_kg*m-3', 
-              'ku_W*m-1*K-1',
-              'Hcem_J*g-1', 
-              'Hu_J*g-1',   
-              'Ea_J*mol-1', 
-              'alphau',     
-              'tau_h',      
-              'beta',       
-              'Cc_g*m-3',
-              'Tinit_degC', 
-              'Tamb_degC', 
-              'hconv_W*m-2*K-1',  
-              'thickness_m',
-              'timestep_h',
-              'stop_h',
-              'egenadbtcTot_MJ*m-3'
+    labels = ['Vunit_m^3 (unit volume)',
+              'mC_kg (mass of cement)',   
+              'cvC_J/(kg K) (specific heat of cement)',  
+              'mAg_kg (mass of aggregate)',  
+              'cvAg_J/(kg K) (specific heat of aggregate)', 
+              'mH2O_kg (mass of water)', 
+              'cvH2O_J/(kg K) (specific heat of water)',
+              'rho_kg/m^3 (density of concrete)', 
+              'ku_W/(m K) (thermal conductivity of concrete',
+              'Hcem_J/g (heat of hydration of cement)', 
+              'Hu_J/g (total (ultimate) heat of hydration)',   
+              'Ea_J/mol (activation energy)', 
+              'alphau (ultimate degree of hydration)',     
+              'tau_h (hydration time parameter)',      
+              'beta (hydration shape parameter)',       
+              'Cc_g/m^3 (cementitious material content per unit volume of concrete)',
+              'Tinit_degC (initial temperature)', 
+              'Tamb_degC (ambient temperature)', 
+              'hconv_W/(m^2 K) (convection coefficient)',  
+              'zmax_m (maximum height of concrete)',
+              'dz_m (thickness of each discretized layer of concrete)',
+              'timestep_h (time between siolution points)',
+              'stopTime_h (end time of simulation)',
+              'Total adiabatic energy released_MJ*m-3'
               ]
     values = [Vunit.magnitude,
               mC.magnitude,
@@ -337,7 +339,8 @@ else:
               Tinit.magnitude-273.15,
               Tamb.magnitude-273.15,
               hconv.magnitude,
-              thk,
+              zmax,
+              dz,
               dt_h.magnitude,
               tend_h,
               egenadbtcTot.magnitude
