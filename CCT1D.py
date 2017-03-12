@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=1.02
+version=1.021
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of one-dimensional concrete curing
@@ -131,7 +131,7 @@ hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 # Simulation Parameters
 zmax = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
-Nn   = 23                                           # number of nodes
+Nn   = 29                                           # number of nodes
 Ni   = Nn-1                                         # node index 
 dz   = zmax/Nn                                      # thickness of each 'layer'
 z    = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
@@ -318,7 +318,7 @@ else:
               'dz_m (thickness of each discretized layer of concrete)',
               'timestep_h (time between siolution points)',
               'stopTime_h (end time of simulation)',
-              'Total adiabatic energy released_MJ*m-3'
+              'Total adiabatic energy released_MJ/m^3'
               ]
     values = [Vunit.magnitude,
               mC.magnitude,
@@ -340,7 +340,7 @@ else:
               Tamb.magnitude-273.15,
               hconv.magnitude,
               zmax,
-              dz,
+              dz.magnitude,
               dt_h.magnitude,
               tend_h,
               egenadbtcTot.magnitude
