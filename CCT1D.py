@@ -5,10 +5,17 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=1.022
+version=2.0
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
-# estimate the thermal history of one-dimensional concrete curing
+# estimate the thermal history of quasi-one-dimensional concrete curing
+# 
+# The "quasi" qualifier signifies that heat transfer may occur through
+# formwork in a direction perpendicular to the 'one-dimensional' direction;
+# HOWEVER this requires that the Biot number in this perpendicular
+# direction is much less than one so that the temperature gradient
+# in this direction is negligible compared to the temperature difference
+# associated with 'perpendicular' heat transfer.
 # 
 # 
 # This model is intended to sit in between a full transient 3D FEA model and a
@@ -129,12 +136,15 @@ hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 
 
-# Simulation Parameters
+# Geometry etc. and simulation parameters
 zmax = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
 Nn   = 29                                           # number of nodes
 Ni   = Nn-1                                         # node index 
 dz   = zmax/Nn                                      # thickness of each 'layer'
 z    = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
+Dy   = 0.6096 * ureg.meter                          # width of concrete in y-direction
+Dx   = Dy                                           # width of concrete in x-direction
+Ufwk = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
 
 dt_h   = 0.05                                       # timestep, hours
 tend_h = 175                                        # simulation end time, hours
@@ -215,13 +225,13 @@ else:
     # now for the good stuff - a time loop!!
     for nt in range (1, t_h.size):
         # bottom adiabatic end; @ z=0
-        T[nt, 0] = (dt_s/(cv*rho*dz))*(k/dz)*(T[nt-1, 1] - T[nt-1, 0]) + (dt_s/(cv*rho))*egen[0] + T[nt-1, 0]
+        T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[0] + T[nt-1, 0]
         
         # interior points
-        T[nt, 1:Ni:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) + (dt_s/(cv*rho))*egen[1:Ni:] + T[nt-1, 1:Ni:]
+        T[nt, 1:Ni:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:Ni:] - Tamb) + (dt_s/(cv*rho))*egen[1:Ni:] + T[nt-1, 1:Ni:]
 
         # top end with convection boundary condition, @ z=z[Nn]
-        T[nt, Ni] = (dt_s/(cv*rho*dz))*(hconv*(Tamb - T[nt-1, Ni]) + (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) ) + (dt_s/(cv*rho))*egen[Ni] + T[nt-1, Ni]
+        T[nt, Ni] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) - hconv*(T[nt-1, Ni] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,Ni] - Tamb) + (dt_s/(cv*rho))*egen[Ni] + T[nt-1, Ni]
 
         # compute the adiabatic temperature
         Tadbtc[nt] = (egenadbtc[nt-1]/(rho*cv))*dt_s + Tadbtc[nt-1]
@@ -316,6 +326,9 @@ else:
               'hconv_W/(m^2 K) (convection coefficient)',  
               'zmax_m (maximum height of concrete)',
               'dz_m (thickness of each discretized layer of concrete)',
+              'Dy_m (width of concrete, y-coordinate)',
+              'Dx_m (width of concrete, x-coordinate)',
+              'Ufwk_W/(m^2 K) (U-value of formwork+air film)',
               'timestep_h (time between siolution points)',
               'stopTime_h (end time of simulation)',
               'Total adiabatic energy released_MJ/m^3'
@@ -341,6 +354,9 @@ else:
               hconv.magnitude,
               zmax,
               dz.magnitude,
+              Dy.magnitude,
+              Dx.magnitude,
+              Ufwk.magnitude,
               dt_h.magnitude,
               tend_h,
               egenadbtcTot.magnitude
