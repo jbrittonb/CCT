@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=2.0
+version=2.01
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -142,9 +142,10 @@ Nn   = 29                                           # number of nodes
 Ni   = Nn-1                                         # node index 
 dz   = zmax/Nn                                      # thickness of each 'layer'
 z    = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
-Dy   = 0.6096 * ureg.meter                          # width of concrete in y-direction
+Dy   = 1.219 * ureg.meter                           # width of concrete in y-direction
 Dx   = Dy                                           # width of concrete in x-direction
 Ufwk = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
+Biy  = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
 
 dt_h   = 0.05                                       # timestep, hours
 tend_h = 175                                        # simulation end time, hours
@@ -178,6 +179,7 @@ diffusionNumber    = thermalDiffusivity * dt_s / dz**2
 # -----------------------------------
 print(' ')
 print('diffusionNumber: ', str(np.max(diffusionNumber)))
+print('Biot number in the y-direction', str(Biy))
 if diffusionNumber >= 0.5:
     print('diffusionNumber is greater than or equal to 0.5; needs to be < 0.5 for stability')
 else:
