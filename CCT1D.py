@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=1.021
+version=1.022
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of one-dimensional concrete curing
@@ -218,7 +218,7 @@ else:
         T[nt, 0] = (dt_s/(cv*rho*dz))*(k/dz)*(T[nt-1, 1] - T[nt-1, 0]) + (dt_s/(cv*rho))*egen[0] + T[nt-1, 0]
         
         # interior points
-        T[nt, 1:Ni:] = diffusionNumber*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) + (dt_s/(cv*rho))*egen[1:Ni:] + T[nt-1, 1:Ni:]
+        T[nt, 1:Ni:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) + (dt_s/(cv*rho))*egen[1:Ni:] + T[nt-1, 1:Ni:]
 
         # top end with convection boundary condition, @ z=z[Nn]
         T[nt, Ni] = (dt_s/(cv*rho*dz))*(hconv*(Tamb - T[nt-1, Ni]) + (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) ) + (dt_s/(cv*rho))*egen[Ni] + T[nt-1, Ni]
