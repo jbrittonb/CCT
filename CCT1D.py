@@ -25,7 +25,9 @@ version=2.01
 # evolution of a concrete pour to:
 #   1. aid the planning of experiments or FEA simulation runs
 #   2. aid in understanding and interpreting experimental results
-#   3. serve as a sandbox to quickly try out 'what if' scenarios
+#   3. serve as a sandbox to quickly try out 'what if' scenarios:
+#      e.g. to quickly test out or screen thermal management plan strategies;
+#      active cooling could be implemented here in a quick-and-dirty way
 #   4. be a poor-man's sensitivity analysis/manual calibration 'canvas'
 # 
 # 
@@ -104,15 +106,15 @@ Rgas = 8.314 * (ureg.joule/ureg.mole/ureg.degK)     # gas constant
 
 
 # Concrete thermal parameters
-Vunit = 1 * (ureg.meter**3)                         # a notional unit volume; shouldn't need to change this
-mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3)
-cvC   = 1140 * (ureg.joule/ureg.kg/ureg.degK)       # specific heat of cement
-mAg   = 1701 * (ureg.kg)                            # mass of aggregate (per m^3)
-cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of aggregate
-mH2O  = 183.9 * (ureg.kg)                           # mass of water (per m^3)
+Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of concrete; shouldn't need to change this
+mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3 of concrete)
+cvC   = 840 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of cement
+mAg   = 1761 * (ureg.kg)                            # mass of aggregate, coarse and fine (per m^3 of concrete)
+cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of aggregate; assume coarse and fine are equal
+mH2O  = 183.9 * (ureg.kg)                           # mass of water (per m^3 of concrete)
 cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # specific heat of water
 mCnc  = mC + mAg + mH2O                             # mass of concrete
-rho   = mCnc/Vunit                         # density of concrete
+rho   = mCnc/Vunit                                  # density of concrete
 ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductivity at fully hydrated condition
 
 
@@ -131,7 +133,7 @@ Cc.ito(ureg.gram/ureg.meter**3)
 
 # Boundary conditions
 Tinit = Q_(13.333+273.15, ureg.degK)                # initial temperature
-Tamb  = Q_(19+273.15, ureg.degK)                    # ambient temperature
+Tamb  = Q_(20.2+273.15, ureg.degK)                  # ambient temperature
 hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 
@@ -315,7 +317,7 @@ else:
               'mH2O_kg (mass of water)', 
               'cvH2O_J/(kg K) (specific heat of water)',
               'rho_kg/m^3 (density of concrete)', 
-              'ku_W/(m K) (thermal conductivity of concrete',
+              'ku_W/(m K) (thermal conductivity of concrete)',
               'Hcem_J/g (heat of hydration of cement)', 
               'Hu_J/g (total (ultimate) heat of hydration)',   
               'Ea_J/mol (activation energy)', 
