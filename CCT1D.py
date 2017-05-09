@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=2.05
+version=3.0
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -37,6 +37,11 @@ version=2.05
 # Schindler, Anton K., Terry Dossey, and B.F. McCullough. 2002. “Temperature Control During Construction to Improve the Long Term Performance of Portland Cement Concrete Pavements.” Vol. 7.
 # Schindler, Anton K., and Kevin J. Folliard. 2005. “Heat of Hydration Models for Cementitious Materials.” ACI Materials Journal 102 (1): 24–33. doi:10.1680/adcr.11.00007.
 # Riding, Kyle A., Jonathan L. Poole, Kevin J. Folliard, Maria C G Juenger, and Anton K. Schindler. 2012. “Modeling Hydration of Cementitious Systems.” ACI Materials Journal 109 (2): 225–34.
+# 
+# 
+# A simple cooling scheme is implemented; at the moment it uses a parameter (ecool)
+# to fix a volumetric cooling rate; it does not model water flow rates, temperatures, etc.
+# 
 # 
 # Assume one end (z=0) is adiabatic, and the other end
 # (z=zmax) is under a convective boundary condition, with
@@ -144,17 +149,32 @@ hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 
 
-# Geometry etc. and simulation parameters
-zmax = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
-Nn   = 29                                           # number of nodes
-Ni   = Nn-1                                         # node index 
-dz   = zmax/Nn                                      # thickness of each 'layer'
-z    = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
-Dy   = 1.219 * ureg.meter                           # width of concrete in y-direction
-Dx   = Dy                                           # width of concrete in x-direction
-Ufwk = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
-Biy  = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
+# Geometry, etc. parameters
+zmax  = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
+Nn    = 29                                           # number of nodes
+nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
+dz    = zmax/Nn                                      # thickness of each 'layer'
+z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
+Dy    = 1.219 * ureg.meter                           # width of concrete in y-direction
+Dx    = Dy                                           # width of concrete in x-direction
+Ufwk  = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
+Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
 
+
+
+# Cooling system parameters
+CnStrt  = 1                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
+CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
+NCn     = 7                                         # number of cooled nodes
+TsC     = Q_(60+273.15, ureg.degK)                  # temperature above which cooling starts
+ECOOL   = -750 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
+Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
+for ni in range(0, NCn):
+  Cn[CnStrt + ni*CnSpcng] = 1
+
+
+
+# Sumulation parameters
 dt_h   = 0.05                                       # timestep, hours
 tend_h = 175                                        # simulation end time, hours
 t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
@@ -248,14 +268,21 @@ else:
 
     # now for the good stuff - a time loop!!
     for nt in range (1, t_h.size):
+
+        # check if we need to actively cool; if so, turn it on!
+        if np.max(T[nt-1, :]) >= TsC:
+          ecool = Cn * ECOOL * np.ones(Nn)
+        else:
+          ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+
         # bottom adiabatic end; @ z=0
-        T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] + T[nt-1, 0]
+        T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] + (dt_s/(cv*rho))*ecool[0] + T[nt-1, 0]
         
         # interior points
-        T[nt, 1:Ni:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:Ni:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:Ni:] + T[nt-1, 1:Ni:]
+        T[nt, 1:nImax:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:nImax-1:] - 2*T[nt-1, 1:nImax:] + T[nt-1, 2:nImax+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:nImax:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:nImax:] + (dt_s/(cv*rho))*ecool[1:nImax:] + T[nt-1, 1:nImax:]
 
         # top end with convection boundary condition, @ z=z[Nn]
-        T[nt, Ni] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) - hconv*(T[nt-1, Ni] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,Ni] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, Ni] + T[nt-1, Ni]
+        T[nt, nImax] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, nImax-1] - T[nt-1, nImax]) - hconv*(T[nt-1, nImax] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,nImax] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, nImax] + (dt_s/(cv*rho))*ecool[nImax] + T[nt-1, nImax]
 
         # compute the adiabatic temperature
         Tadbtc[nt] = (egenadbtc[nt-1]/(rho*cv))*dt_s + Tadbtc[nt-1]
