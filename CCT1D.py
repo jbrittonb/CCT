@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=2.01
+version=2.05
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -102,11 +102,17 @@ Q_ = ureg.Quantity
 # Constants                                         
 Tr   = Q_(294.25, ureg.degK)                        # reference temperature 
 Rgas = 8.314 * (ureg.joule/ureg.mole/ureg.degK)     # gas constant
-
-
-
-# Concrete thermal parameters
 Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of concrete; shouldn't need to change this
+
+
+
+
+
+# -----------------------------------
+# User inputs
+# -----------------------------------
+
+# Concrete's component masses and thermal parameters
 mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3 of concrete)
 cvC   = 840 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of cement
 mAg   = 1761 * (ureg.kg)                            # mass of aggregate, coarse and fine (per m^3 of concrete)
@@ -155,6 +161,14 @@ t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
 
 
 
+
+
+
+
+# -----------------------------------
+# Some minor preprocessing
+# -----------------------------------
+
 # Some unit conversions, for convenience mostly
 Tinit_degC = Tinit.to('degC')
 z_ft  = z.to(ureg.ft)                               
@@ -169,6 +183,10 @@ cv = (1/mCnc) * (mC*cvC + mAg*cvAg + mH2O*cvH2O)     # initial specific heat
 thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
+
+
+
+
 
 
 
@@ -195,8 +213,8 @@ else:
     # initialize degree of hydration vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
     alpha = np.zeros(Nn)
 
-    # initialize internal energy generation/a.k.a. heat of hydration vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
-    egen = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+    # initialize internal energy generation/a.k.a. heat of hydration array
+    egen = np.zeros((t_h.size, z.size)) * (ureg.watt/ureg.meter**3)
 
     # initialize thermal conductivity (ONLY CURRENT VALUE is STORED IN MEMORY)
     # here we assume a spatially constant but temporally variable thermal conductivity
@@ -205,6 +223,8 @@ else:
 
     # initial specific heat: we've already done it before computing the diffusionNumber
     # (like thermal conductivity, assume spatially constant but temporally varying)
+
+
 
     # initialize vectors for variables for adiabatic conditions
     Tadbtc = np.zeros(t_h.size) * ureg.degK
@@ -229,13 +249,13 @@ else:
     # now for the good stuff - a time loop!!
     for nt in range (1, t_h.size):
         # bottom adiabatic end; @ z=0
-        T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[0] + T[nt-1, 0]
+        T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] + T[nt-1, 0]
         
         # interior points
-        T[nt, 1:Ni:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:Ni:] - Tamb) + (dt_s/(cv*rho))*egen[1:Ni:] + T[nt-1, 1:Ni:]
+        T[nt, 1:Ni:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:Ni-1:] - 2*T[nt-1, 1:Ni:] + T[nt-1, 2:Ni+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:Ni:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:Ni:] + T[nt-1, 1:Ni:]
 
         # top end with convection boundary condition, @ z=z[Nn]
-        T[nt, Ni] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) - hconv*(T[nt-1, Ni] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,Ni] - Tamb) + (dt_s/(cv*rho))*egen[Ni] + T[nt-1, Ni]
+        T[nt, Ni] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, Ni-1] - T[nt-1, Ni]) - hconv*(T[nt-1, Ni] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,Ni] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, Ni] + T[nt-1, Ni]
 
         # compute the adiabatic temperature
         Tadbtc[nt] = (egenadbtc[nt-1]/(rho*cv))*dt_s + Tadbtc[nt-1]
@@ -243,7 +263,7 @@ else:
         # update equivalent age, degree of hydration, and internal energy generation egen
         te_h[:]  = te_h[:] + dt_h*np.exp( -(Ea/Rgas)*( (1/T[nt,:]) - (1/Tr) ) )
         alpha[:] = alphau * np.exp(-1*(tau_h/te_h[:])**beta)
-        egen[:]  = ( Hu * Cc * ((tau_h/te_h[:])**beta) * (beta/te_h[:]) * alpha[:] * np.exp( (Ea/Rgas)*((1/Tr) - (1/T[nt, :])) ) )
+        egen[nt, :]  = ( Hu * Cc * ((tau_h/te_h[:])**beta) * (beta/te_h[:]) * alpha[:] * np.exp( (Ea/Rgas)*((1/Tr) - (1/T[nt, :])) ) )
 
         # update other adiabatic variables for next time step
         teadbtc_h[nt]  = teadbtc_h[nt-1] + dt_h*np.exp( -(Ea/Rgas)*( (1/Tadbtc[nt]) - (1/Tr) ) )
@@ -259,12 +279,12 @@ else:
 
 
 
-        # only doing this to 'clean up' the units;
-        # after the calculation of the next egen, it's units are still W/m^-3,
-        # but expressed as an ugly combination of other more basic units
-        egen.ito(ureg.watt/ureg.meter**3)
-        egenadbtc.ito(ureg.watt/ureg.meter**3)
-        egenadbtcCuml.ito(ureg.joule/ureg.meter**3)
+        # # only doing this to 'clean up' the units;
+        # # after the calculation of the next egen, it's units are still W/m^-3,
+        # # but expressed as an ugly combination of other more basic units
+        # egen.ito(ureg.watt/ureg.meter**3)
+        # egenadbtc.ito(ureg.watt/ureg.meter**3)
+        # egenadbtcCuml.ito(ureg.joule/ureg.meter**3)
 
         bar.update(nt+1)
 
@@ -282,6 +302,13 @@ else:
 
     # time simulation ended; used for archiving results
     timeOfThisSim = strftime("%d%b%Y_%H.%M.%S", localtime())
+
+    # only doing this to 'clean up' the units;
+    # after the calculation of the next egen, it's units are still W/m^-3,
+    # but expressed as an ugly combination of other more basic units
+    egen.ito(ureg.watt/ureg.meter**3)
+    egenadbtc.ito(ureg.watt/ureg.meter**3)
+    egenadbtcCuml.ito(ureg.joule/ureg.meter**3)
 
     # some unit converstions for convenience
     T.ito(ureg.degC)
@@ -374,6 +401,10 @@ else:
     # ...convert temperature data to a Pandas dataframe... 
     df_T = pd.DataFrame(T.magnitude, index=t_h, columns=z)
 
+
+    # ...convert egen data to a Pandas dataframe...
+    df_egen = pd.DataFrame(egen.magnitude, index=t_h, columns=z)
+
     # ...convert adiabatic variables to a Pandas dataframe...
     df_adbtc = pd.DataFrame(data=[t_h.magnitude, alphaadbtc, teadbtc_h.magnitude, egenadbtc.magnitude, Tadbtc.magnitude, egenadbtcCuml.magnitude, egenadbtcCumlTrap.magnitude], 
                              index=['t_h', 'alphaadbtc', 'teadbtc_h', 'egenadbtc_W*m-3', 'Tadbtc_degC', 'egenadbtcCuml_MJ*m-3', 'egenadbtcCumlTrap_MJ*m-3']
@@ -389,7 +420,8 @@ else:
     with pd.ExcelWriter(fileName) as writer:
         df_metadata.to_excel(writer, sheet_name='Metadata')
         df_inputs.to_excel(writer, sheet_name='Inputs')
-        df_T.to_excel(writer, sheet_name='SimTempsDegC')
+        df_T.to_excel(writer, sheet_name='SimTemps_DegC')
+        df_egen.to_excel(writer, sheet_name='egen_Wm-3')
         df_adbtc.to_excel(writer, sheet_name='AdiabaticConds')
 
 
