@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=3.0
+version=3.01
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -167,6 +167,8 @@ CnStrt  = 1                                         # cooled node start; e.g. Cn
 CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
 NCn     = 7                                         # number of cooled nodes
 TsC     = Q_(60+273.15, ureg.degK)                  # temperature above which cooling starts
+TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
+coolFlag= 0                                         # 0 is no cooling, 1 is turn cooling on
 ECOOL   = -750 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
 for ni in range(0, NCn):
@@ -270,10 +272,15 @@ else:
     for nt in range (1, t_h.size):
 
         # check if we need to actively cool; if so, turn it on!
-        if np.max(T[nt-1, :]) >= TsC:
+        if np.max(T[nt-1, :]) > TsC:
           ecool = Cn * ECOOL * np.ones(Nn)
-        else:
+          coolFlag = 1
+        elif np.max(T[nt-1, :]) < TeC:
           ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+          coolFlag = 0
+        elif coolFlag == 1:
+          ecool = Cn * ECOOL * np.ones(Nn)
+        
 
         # bottom adiabatic end; @ z=0
         T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] + (dt_s/(cv*rho))*ecool[0] + T[nt-1, 0]
