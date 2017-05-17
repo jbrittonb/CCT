@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=3.01
+version=3.02
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -135,8 +135,8 @@ Hcem    = 468.43 * (ureg.joule/ureg.gram)           # heat of hydration of cemen
 Hu      = 468 * (ureg.joule/ureg.gram)              # total (ultimate) heat of hydration of cement+scm
 Ea      = 33826 * (ureg.joule/ureg.mole)            # activation energy
 alphau  = 0.742                                     # ultimate degree of hydration (is a fraction, thus unitless)
-tau_h   = 17.483 * (ureg.hour)                      # hydration time parameter
-beta    = 1.065                                     # hydration shape parameter (unitless)
+tau_h   = 17.483 * (ureg.hour)                      # hydration time parameter (controls time when egen starts to accelerate)
+beta    = 1.065                                     # hydration shape parameter (unitless; controls rate of reaction)
 Cc      = mC/Vunit                                  # cementitious material content per unit volume of concrete
 Cc.ito(ureg.gram/ureg.meter**3)
 
@@ -144,7 +144,7 @@ Cc.ito(ureg.gram/ureg.meter**3)
 
 # Boundary conditions
 Tinit = Q_(13.333+273.15, ureg.degK)                # initial temperature
-Tamb  = Q_(20.2+273.15, ureg.degK)                  # ambient temperature
+Tamb  = Q_(27.333+273.15, ureg.degK)                  # ambient temperature (20.2)
 hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 
@@ -168,8 +168,8 @@ CnSpcng = 3                                         # spacing between cooled nod
 NCn     = 7                                         # number of cooled nodes
 TsC     = Q_(60+273.15, ureg.degK)                  # temperature above which cooling starts
 TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
-coolFlag= 0                                         # 0 is no cooling, 1 is turn cooling on
-ECOOL   = -750 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
+coolFlag= 0                                         # control variable: 0 is no cooling, 1 is turn cooling on
+ECOOL   = -0 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
 for ni in range(0, NCn):
   Cn[CnStrt + ni*CnSpcng] = 1
@@ -394,6 +394,7 @@ else:
               'Dy_m (width of concrete, y-coordinate)',
               'Dx_m (width of concrete, x-coordinate)',
               'Ufwk_W/(m^2 K) (U-value of formwork+air film)',
+              'ECOOL_W/m^3 (volumetric cooling rate)'
               'timestep_h (time between siolution points)',
               'stopTime_h (end time of simulation)',
               'Total adiabatic energy released_MJ/m^3'
@@ -422,6 +423,7 @@ else:
               Dy.magnitude,
               Dx.magnitude,
               Ufwk.magnitude,
+              ECOOL.magnitude,
               dt_h.magnitude,
               tend_h,
               egenadbtcTot.magnitude
