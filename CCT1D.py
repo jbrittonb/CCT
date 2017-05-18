@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=3.02
+version=3.03
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -394,7 +394,7 @@ else:
               'Dy_m (width of concrete, y-coordinate)',
               'Dx_m (width of concrete, x-coordinate)',
               'Ufwk_W/(m^2 K) (U-value of formwork+air film)',
-              'ECOOL_W/m^3 (volumetric cooling rate)'
+              'ECOOL_W/m^3 (volumetric cooling rate)',
               'timestep_h (time between siolution points)',
               'stopTime_h (end time of simulation)',
               'Total adiabatic energy released_MJ/m^3'
