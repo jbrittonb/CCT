@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=3.03
+version=3.1
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -144,14 +144,14 @@ Cc.ito(ureg.gram/ureg.meter**3)
 
 # Boundary conditions
 Tinit = Q_(13.333+273.15, ureg.degK)                # initial temperature
-Tamb  = Q_(27.333+273.15, ureg.degK)                  # ambient temperature (20.2)
+Tamb  = Q_(13.333+273.15, ureg.degK)                # ambient temperature (20.2)
 hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
 
 
 
 # Geometry, etc. parameters
-zmax  = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters
-Nn    = 29                                           # number of nodes
+zmax  = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
+Nn    = 29                                           # number of nodes (use Nn = 29 for zmax = 1.8288m)
 nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
 dz    = zmax/Nn                                      # thickness of each 'layer'
 z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
@@ -202,6 +202,7 @@ dt_s  = dt_h.to(ureg.second)
 
 # A little prep work
 cv = (1/mCnc) * (mC*cvC + mAg*cvAg + mH2O*cvH2O)     # initial specific heat
+cvi = cv
 thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
@@ -248,6 +249,8 @@ else:
 
 
 
+
+
     # initialize vectors for variables for adiabatic conditions
     Tadbtc = np.zeros(t_h.size) * ureg.degK
     Tadbtc[0] = Tinit
@@ -262,6 +265,21 @@ else:
     
     egenadbtcTot = Hu * Cc * alphau                                         # total energy released at final hydration; egen integrated over all time
     egenadbtcTot.ito(ureg.MJ/ureg.meter**3)
+
+
+
+
+
+    # for conduction heat flux calculations
+    dotq = np.zeros((t_h.size, z.size)) * (ureg.watt/ureg.meter**2)
+
+    # calculate a 'volumetric' heat transfer, i.e. heat flux normalized by dz.
+    # note that this quantity falls out of the heat diffusion equation if it's 
+    #   written in terms of heat flux and not in terms of the second spatial derivative of temperature
+    # this allows direct and proper comparison with egen and rho*cv*(dT/dt)
+    # dotqV = np.zeros((t_h.size, z.size)) * (ureg.watt/ureg.meter**3)
+
+
 
 
 
@@ -305,6 +323,14 @@ else:
         egenadbtc[nt]  = ( Hu * Cc * ((tau_h/teadbtc_h[nt])**beta) * (beta/teadbtc_h[nt]) * alphaadbtc[nt] * np.exp( (Ea/Rgas)*((1/Tr) - (1/Tadbtc[nt])) ) )
         egenadbtcCuml[nt] = Hu * Cc * alphaadbtc[nt]
         egenadbtcCumlTrap[nt] = egenadbtcCumlTrap[nt-1] + 0.5*dt_s*(egenadbtc[nt-1] + egenadbtc[nt]) 
+
+        # compute conduction heat flux and 'volumetric' heat flux
+        dotq[nt, 0]        = -k * (-3*T[nt, 0] + 4*T[nt, 1] - T[nt, 2])/(2*dz)
+        dotq[nt, 1:nImax:] = -k * (T[nt, 2:nImax+1:] - T[nt,  0:nImax-1:])/(2*dz)
+        dotq[nt, nImax]    = -k * (T[nt, nImax-2] - 4*T[nt, nImax-1] + 3*T[nt, nImax])/(2*dz)
+
+        # compute conduction 'volumetric' heat flux
+        # dotqV = dotq/dz
 
         # some stuff for the next time step
         k = ku*(1.33 - 0.33*np.average(alpha))
@@ -378,7 +404,10 @@ else:
               'mH2O_kg (mass of water)', 
               'cvH2O_J/(kg K) (specific heat of water)',
               'rho_kg/m^3 (density of concrete)', 
-              'ku_W/(m K) (thermal conductivity of concrete)',
+              'ku_W/(m K) (initial thermal conductivity of concrete)',
+              'k_W/(m K) (final thermal conductivity of concrete)',
+              'cvi_J/(kg K) (initial specific heat of concrete)',
+              'cv_J/(kg K) (final specific heat of concrete)',
               'Hcem_J/g (heat of hydration of cement)', 
               'Hu_J/g (total (ultimate) heat of hydration)',   
               'Ea_J/mol (activation energy)', 
@@ -408,6 +437,9 @@ else:
               cvH2O.magnitude,
               rho.magnitude, 
               ku.magnitude, 
+              k.magnitude,
+              cvi.magnitude,
+              cv.magnitude,
               Hcem.magnitude, 
               Hu.magnitude, 
               Ea.magnitude,    
@@ -441,6 +473,12 @@ else:
     # ...convert egen data to a Pandas dataframe...
     df_egen = pd.DataFrame(egen.magnitude, index=t_h, columns=z)
 
+    # ...convert dotqV data to a Pandas dataframe
+    # df_dotqV = pd.DataFrame(dotqV.magnitude, index=t_h, columns=z)
+
+    # ...convert dotq data to a Pandas dataframe...
+    df_dotq = pd.DataFrame(dotq.magnitude, index=t_h, columns=z)
+
     # ...convert adiabatic variables to a Pandas dataframe...
     df_adbtc = pd.DataFrame(data=[t_h.magnitude, alphaadbtc, teadbtc_h.magnitude, egenadbtc.magnitude, Tadbtc.magnitude, egenadbtcCuml.magnitude, egenadbtcCumlTrap.magnitude], 
                              index=['t_h', 'alphaadbtc', 'teadbtc_h', 'egenadbtc_W*m-3', 'Tadbtc_degC', 'egenadbtcCuml_MJ*m-3', 'egenadbtcCumlTrap_MJ*m-3']
@@ -458,6 +496,8 @@ else:
         df_inputs.to_excel(writer, sheet_name='Inputs')
         df_T.to_excel(writer, sheet_name='SimTemps_DegC')
         df_egen.to_excel(writer, sheet_name='egen_Wm-3')
+        # df_dotqV.to_excel(writer, sheet_name='dotqV_Wm-3')
+        df_dotq.to_excel(writer, sheet_name='dotqV_Wm-2')
         df_adbtc.to_excel(writer, sheet_name='AdiabaticConds')
 
 
