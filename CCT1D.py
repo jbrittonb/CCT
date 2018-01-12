@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=3.1
+version=4.0
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -39,14 +39,41 @@ version=3.1
 # Riding, Kyle A., Jonathan L. Poole, Kevin J. Folliard, Maria C G Juenger, and Anton K. Schindler. 2012. “Modeling Hydration of Cementitious Systems.” ACI Materials Journal 109 (2): 225–34.
 # 
 # 
-# A simple cooling scheme is implemented; at the moment it uses a parameter (ecool)
-# to fix a volumetric cooling rate; it does not model water flow rates, temperatures, etc.
 # 
 # 
+# Assumptions
+# .......................................................
 # Assume one end (z=0) is adiabatic, and the other end
 # (z=zmax) is under a convective boundary condition, with
 # the ambient temperature being constant
-#
+# 
+# 
+# 
+# 
+# 
+# Notes on the cooling system
+# .......................................................
+# A simple cooling scheme is implemented: it incorporates water flow through a pipe along
+# the z-direction.  Pipe diameters and materials, water inlet temperatures and flow
+# rates are specified.
+# 
+# In version 3.1 - the simple prescribed rate of (volumetric) cooling - one can specify
+# the nodes to which cooling is applied.  I.e. you can cool all nodes, cool only nodes
+# in the "core", cool every other node, etc.
+# 
+# In this version, the pipe is assumed to have its inlet at the bottom (z=0)
+# and runs through each node sequentially up to a user-specified outlet node
+# 
+# It is important to note that in this quasi-one-dimensional model, the assumption that
+# the layers of concrete (represented by nodes) are isothermal in the x- and y-directions
+# is in conflict with the cooling model: in reality there would be a temperature gradient
+# between the concrete and the pipe, but in this model there is no such gradient by construction.  
+# Therefore when cooling is used, the x- and y-size of the concrete be limited.
+# 
+# This cooling model is also a quasi-steady-state one; there is no 'dynamics' involved,
+# as dTw/dt - the rate of change of a control volume within the pipe, through which
+# water flows, is taken to be zero.
+# 
 # 
 # 
 # 
@@ -121,12 +148,13 @@ Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of 
 mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3 of concrete)
 cvC   = 840 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of cement
 mAg   = 1761 * (ureg.kg)                            # mass of aggregate, coarse and fine (per m^3 of concrete)
-cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of aggregate; assume coarse and fine are equal
+cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # constant volume specific heat of aggregate; assume coarse and fine are equal
 mH2O  = 183.9 * (ureg.kg)                           # mass of water (per m^3 of concrete)
-cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # specific heat of water
+cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # constant volume specific heat of water
 mCnc  = mC + mAg + mH2O                             # mass of concrete
 rho   = mCnc/Vunit                                  # density of concrete
 ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductivity at fully hydrated condition
+
 
 
 
@@ -142,10 +170,12 @@ Cc.ito(ureg.gram/ureg.meter**3)
 
 
 
+
 # Boundary conditions
 Tinit = Q_(13.333+273.15, ureg.degK)                # initial temperature
 Tamb  = Q_(13.333+273.15, ureg.degK)                # ambient temperature (20.2)
-hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient
+hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient of environment
+
 
 
 
@@ -155,30 +185,41 @@ Nn    = 29                                           # number of nodes (use Nn =
 nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
 dz    = zmax/Nn                                      # thickness of each 'layer'
 z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
-Dy    = 1.219 * ureg.meter                           # width of concrete in y-direction
-Dx    = Dy                                           # width of concrete in x-direction
+Dy    = 0.5 * ureg.meter                            # width of concrete in y-direction (=1.219 in full scale experiments)
+Dx    = Dy                                           # width of concrete in x-direction (=1.219 in full scale experiments)
 Ufwk  = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
 Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
 
 
 
+
 # Cooling system parameters
-CnStrt  = 1                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
-CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
-NCn     = 7                                         # number of cooled nodes
+CnStrt  = 0                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
+# CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
+NCn     = 25                                         # number of cooled nodes
 TsC     = Q_(60+273.15, ureg.degK)                  # temperature above which cooling starts
 TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
 coolFlag= 0                                         # control variable: 0 is no cooling, 1 is turn cooling on
-ECOOL   = -0 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
+ECOOL   = 0 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
 for ni in range(0, NCn):
-  Cn[CnStrt + ni*CnSpcng] = 1
+  Cn[CnStrt + ni] = 1
+ripipe  = 0.01 * ureg.meter                        # inner radius of cooling pipe
+ropipe  = 0.011 * ureg.meter                        # outer radius of cooling pipe
+kpipe   = 60 * (ureg.watt/ureg.meter/ureg.degK)     # thermal conductivity of pipe
+hpipe   = 600 * (ureg.watt/ureg.meter**2/ureg.degK) # convection coefficient of pipe
+rhoH2O  = 1 * (ureg.kg/ureg.meter**3)               # density of water
+cpH2O   = cvH2O                                     # constant pressure specific heat of water = constant volume specific heat
+dotmCH2O= 0.15 * (ureg.kg/ureg.second)                 # mass flow rate of cooling water when cooling is on  
+dotm    = 0 * (ureg.kg/ureg.second)                 # is 0 when cooling off, is dotmCH2O when cooling is on
+TinCH2O = Q_(23+273.15, ureg.degK)                  # inlet temperature of cooling water
+
 
 
 
 # Sumulation parameters
 dt_h   = 0.05                                       # timestep, hours
-tend_h = 175                                        # simulation end time, hours
+tend_h = 175                                        # simulation end time, hours (normatively 175)
 t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
 
 
@@ -206,8 +247,11 @@ cvi = cv
 thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
+# heat transfer coefficient of the pipe: a "UA" value, or U-value times area
+UApipe             = ( (1/(hpipe*2*np.pi*ripipe*dz)) + (np.log(ropipe/ripipe)/(2*np.pi*kpipe*dz)) )**(-1)
 
-
+pipeConvCoeff = (UApipe/(np.pi*(ripipe**2)*dz*rhoH2O*cvH2O))
+pipeConvCoeff = pipeConvCoeff.to(ureg.second**(-1))
 
 
 
@@ -226,9 +270,16 @@ print('Biot number in the y-direction', str(Biy))
 if diffusionNumber >= 0.5:
     print('diffusionNumber is greater than or equal to 0.5; needs to be < 0.5 for stability')
 else:
-    # initialize temperature array
+    # initialize concrete temperature array
     T = np.zeros((t_h.size, z.size)) * ureg.degK
-    T[0,:] = Tinit    
+    T[0,:] = Tinit  
+
+    # initialize cooling water temperature array to same temperature as initial concrete temperature
+    Tw = np.zeros((t_h.size, z.size)) * ureg.degK
+    Tw[0,:] = Tinit
+
+    # this is the actual flow rate; is either 0 or equal to dotmCH2O
+    dotm = 0 * (ureg.kg/ureg.second)   
 
     # initialize equivalent age vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
     te_h = np.zeros(Nn) * ureg.hour
@@ -291,23 +342,39 @@ else:
 
         # check if we need to actively cool; if so, turn it on!
         if np.max(T[nt-1, :]) > TsC:
-          ecool = Cn * ECOOL * np.ones(Nn)
+          # turn on
+          ecool = Cn * ( UApipe * (T[nt-1, :] - Tw[nt-1, :]) / (Dx * Dy * dz) )
+          dotm = dotmCH2O
           coolFlag = 1
         elif np.max(T[nt-1, :]) < TeC:
-          ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+          # turn off
+          # ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)  note this may be unnecessary!!
+          ecool = Cn * ( UApipe * (T[nt-1, :] - Tw[nt-1, :]) / (Dx * Dy * dz) )
+          dotm = 0 * (ureg.kg/ureg.second)
           coolFlag = 0
         elif coolFlag == 1:
-          ecool = Cn * ECOOL * np.ones(Nn)
+          # if cooling is on
+          ecool = Cn * ( UApipe * (T[nt-1, :] - Tw[nt-1, :]) / (Dx * Dy * dz) )
+          dotm = dotmCH2O
         
 
         # bottom adiabatic end; @ z=0
-        T[nt, 0] = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] + (dt_s/(cv*rho))*ecool[0] + T[nt-1, 0]
-        
+        T[nt, 0]  = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] - (dt_s/(cv*rho))*ecool[0] + T[nt-1, 0]
+        # Tw[nt, 0] = dt_s * ( pipeConvCoeff*(T[nt-1, 0] - Tw[nt-1, 0]) + (dotm/(np.pi*(ripipe**2)*dz*rhoH2O))*(TinCH2O - Tw[nt-1, 0]) ) + Tw[nt-1, 0]
+        Tw[nt, 0] = (dotm*cvH2O*TinCH2O - UApipe*T[nt-1, 0]) / (-UApipe + dotm*cvH2O)
+        Tw[nt, 0] = Cn[0] * Tw[nt, 0]
+
         # interior points
-        T[nt, 1:nImax:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:nImax-1:] - 2*T[nt-1, 1:nImax:] + T[nt-1, 2:nImax+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:nImax:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:nImax:] + (dt_s/(cv*rho))*ecool[1:nImax:] + T[nt-1, 1:nImax:]
+        T[nt, 1:nImax:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:nImax-1:] - 2*T[nt-1, 1:nImax:] + T[nt-1, 2:nImax+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:nImax:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:nImax:] - (dt_s/(cv*rho))*ecool[1:nImax:] + T[nt-1, 1:nImax:]
+        # Tw[nt, 1:nImax:] = dt_s * ( pipeConvCoeff*(T[nt-1, 1:nImax:] - Tw[nt-1, 1:nImax:]) + (dotm/(np.pi*(ripipe**2)*dz*rhoH2O))*(Tw[nt-1, 0:nImax-1:] - Tw[nt-1, 1:nImax:]) ) + Tw[nt-1, 1:nImax:]
+        Tw[nt, 1:nImax:] = (dotm*cvH2O*Tw[nt-1, 0:nImax-1:] - UApipe*T[nt-1, 1:nImax:]) / (-UApipe + dotm*cvH2O)
+        Tw[nt, 1:nImax:] = Cn[1:nImax:] * Tw[nt, 1:nImax:]
 
         # top end with convection boundary condition, @ z=z[Nn]
-        T[nt, nImax] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, nImax-1] - T[nt-1, nImax]) - hconv*(T[nt-1, nImax] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,nImax] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, nImax] + (dt_s/(cv*rho))*ecool[nImax] + T[nt-1, nImax]
+        T[nt, nImax] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, nImax-1] - T[nt-1, nImax]) - hconv*(T[nt-1, nImax] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,nImax] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, nImax] - (dt_s/(cv*rho))*ecool[nImax] + T[nt-1, nImax]
+        # Tw[nt, nImax] = dt_s * ( pipeConvCoeff*(T[nt-1, nImax] - Tw[nt-1, nImax]) + (dotm/(np.pi*(ripipe**2)*dz*rhoH2O))*(Tw[nt-1, nImax-1] - Tw[nt-1, nImax]) ) + Tw[nt-1, nImax]
+        Tw[nt, nImax] = (dotm*cvH2O*Tw[nt-1, nImax] - UApipe*T[nt-1, nImax]) / (-UApipe + dotm*cvH2O)
+        Tw[nt, nImax] = Cn[nImax] * Tw[nt, nImax]
 
         # compute the adiabatic temperature
         Tadbtc[nt] = (egenadbtc[nt-1]/(rho*cv))*dt_s + Tadbtc[nt-1]
