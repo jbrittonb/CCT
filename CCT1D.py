@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=4.01
+version=5.01
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -147,7 +147,7 @@ Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of 
 
 # Some commentary on a simulation; to be part of output data file name and metadata
 #  fileNameNote is a short descriptor of a simulation
-fileNameNote='BaselineMixGDOTAA+_noCooling'
+fileNameNote01 = 'CODETEST_'
 
 
 
@@ -201,32 +201,41 @@ Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-dire
 
 
 # Cooling system parameters
+ISCOOLED= 1                                         # = 0 for no cooling; = 1 for active cooling
+
 CnStrt  = 0                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
-# CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
-NCn     = 25                                         # number of cooled nodes
+CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
+NCn     = 5                                         # number of cooled nodes
 TsC     = Q_(60+273.15, ureg.degK)                  # temperature above which cooling starts
 TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
 coolFlag= 0                                         # control variable: 0 is no cooling, 1 is turn cooling on
-ECOOL   = 0 * (ureg.watt/ureg.meter**3)          # ASSUMED rate of cooling; REPLACE WITH BETTER MODEL!!
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
+ripipe  = 0.004572 * ureg.meter                     # inner radius of cooling pipe
+ropipe  = 0.00635 * ureg.meter                     # outer radius of cooling pipe
+kpipe   = 0.5 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
+Lpipe   = 5.5 * ureg.meter                          # length of cooling pipes
+dotmCH2O= 0.15 * (ureg.kg/ureg.second)              # mass flow rate of cooling water when cooling is on  
+TinCH2O = Q_(20+273.15, ureg.degK)                  # inlet temperature of cooling water
+
 for ni in range(0, NCn):
-  Cn[CnStrt + ni] = 1
-ripipe  = 0.01 * ureg.meter                        # inner radius of cooling pipe
-ropipe  = 0.011 * ureg.meter                        # outer radius of cooling pipe
-kpipe   = 60 * (ureg.watt/ureg.meter/ureg.degK)     # thermal conductivity of pipe
-hpipe   = 600 * (ureg.watt/ureg.meter**2/ureg.degK) # convection coefficient inside pipe
-rhoH2O  = 1 * (ureg.kg/ureg.meter**3)               # density of water
+  Cn[CnStrt + ni*CnSpcng] = 1
+
+
+
+
+# properties of water
+rhoH2O  = 1000 * (ureg.kg/ureg.meter**3)            # density of water
 cpH2O   = cvH2O                                     # constant pressure specific heat of water = constant volume specific heat
-dotmCH2O= 0.15 * (ureg.kg/ureg.second)                 # mass flow rate of cooling water when cooling is on  
-dotm    = 0 * (ureg.kg/ureg.second)                 # is 0 when cooling off, is dotmCH2O when cooling is on
-TinCH2O = Q_(23+273.15, ureg.degK)                  # inlet temperature of cooling water
+PrH2O   = 7                                         # Prandtl number of water
+kH2O    = 0.598 * (ureg.watt/ureg.meter/ureg.degK)  # thermal conductivity of water
+nuH2O   = 0.000001004 * (ureg.meter**2/ureg.second) # kinematic viscosity of water
 
 
 
 
-# Sumulation parameters
+# Simulation parameters
 dt_h   = 0.05                                       # timestep, hours
-tend_h = 175                                        # simulation end time, hours (normatively 175)
+tend_h = 72                                        # simulation end time, hours (normatively 175)
 t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
 
 
@@ -254,11 +263,31 @@ cvi = cv
 thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
-# heat transfer coefficient of the pipe: a "UA" value, or U-value times area
-UApipe             = ( (1/(hpipe*2*np.pi*ripipe*dz)) + (np.log(ropipe/ripipe)/(2*np.pi*kpipe*dz)) )**(-1)
 
-pipeConvCoeff = (UApipe/(np.pi*(ripipe**2)*dz*rhoH2O*cvH2O))
-pipeConvCoeff = pipeConvCoeff.to(ureg.second**(-1))
+
+
+# calculate the convection coefficient inside the pipe (assuming "smooth" pipe)
+waterVelocity   = dotmCH2O / (rhoH2O * np.pi * ripipe**2)
+ReD             = waterVelocity * 2*ripipe / nuH2O
+frictionFactor  = (0.779 * np.log(ReD) - 1.64)**(-2)
+NuD             = ( (frictionFactor/8)*(ReD - 1000)*PrH2O ) / ( 1 + (12.7*np.sqrt(frictionFactor/8)) * (PrH2O**(2/3) - 1) )
+hpipe           = NuD * kH2O / (2*ripipe)
+
+
+# thermal "resistivity" of the pipe and cooling water flowing through it
+resistTherm = (1/(hpipe*2*np.pi*ripipe)) + (np.log(ropipe/ripipe)/(2*np.pi*kpipe))
+# for convenience, combine this with mass flow and specific heat of water
+Konstant = 1 / (resistTherm * dotmCH2O * cpH2O)
+# just cleaning up the units
+Konstant.ito(1 / ureg.meter)  
+
+
+
+
+# heat transfer coefficient of the pipe: a "UA" value, or U-value times area
+# UApipe             = ( (1/(hpipe*2*np.pi*ripipe*dz)) + (np.log(ropipe/ripipe)/(2*np.pi*kpipe*dz)) )**(-1)
+# pipeConvCoeff = (UApipe/(np.pi*(ripipe**2)*dz*rhoH2O*cvH2O))
+# pipeConvCoeff = pipeConvCoeff.to(ureg.second**(-1))
 
 
 
@@ -281,12 +310,9 @@ else:
     T = np.zeros((t_h.size, z.size)) * ureg.degK
     T[0,:] = Tinit  
 
-    # initialize cooling water temperature array to same temperature as initial concrete temperature
-    Tw = np.zeros((t_h.size, z.size)) * ureg.degK
-    Tw[0,:] = Tinit
-
-    # this is the actual flow rate; is either 0 or equal to dotmCH2O
-    dotm = 0 * (ureg.kg/ureg.second)   
+    # initialize outlet cooling water temperature array to nan; 
+    #   also set to "nan" if not cooling; will be calculated if cooling is on
+    Two = np.zeros((t_h.size, z.size)) * ureg.degK + np.nan * ureg.degK
 
     # initialize equivalent age vector (ONLY CURRENT VALUES ARE STORED IN MEMORY)
     te_h = np.zeros(Nn) * ureg.hour
@@ -296,6 +322,10 @@ else:
 
     # initialize internal energy generation/a.k.a. heat of hydration array
     egen = np.zeros((t_h.size, z.size)) * (ureg.watt/ureg.meter**3)
+
+    # initialize ecool array (ONLY CURRENT VALUES ARE STORED IN MEMORY)
+    # ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+    ecool = np.zeros((t_h.size, z.size)) * (ureg.watt/ureg.meter**3)
 
     # initialize thermal conductivity (ONLY CURRENT VALUE is STORED IN MEMORY)
     # here we assume a spatially constant but temporally variable thermal conductivity
@@ -348,40 +378,37 @@ else:
     for nt in range (1, t_h.size):
 
         # check if we need to actively cool; if so, turn it on!
-        if np.max(T[nt-1, :]) > TsC:
-          # turn on
-          ecool = Cn * ( UApipe * (T[nt-1, :] - Tw[nt-1, :]) / (Dx * Dy * dz) )
-          dotm = dotmCH2O
-          coolFlag = 1
-        elif np.max(T[nt-1, :]) < TeC:
-          # turn off
-          # ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)  note this may be unnecessary!!
-          ecool = Cn * ( UApipe * (T[nt-1, :] - Tw[nt-1, :]) / (Dx * Dy * dz) )
-          dotm = 0 * (ureg.kg/ureg.second)
-          coolFlag = 0
-        elif coolFlag == 1:
-          # if cooling is on
-          ecool = Cn * ( UApipe * (T[nt-1, :] - Tw[nt-1, :]) / (Dx * Dy * dz) )
-          dotm = dotmCH2O
-        
+        if ISCOOLED == 1: 
+          if np.max(T[nt-1, :]) > TsC:
+            # turn on
+            Two[nt-1, :] = Cn * ( (TinCH2O - T[nt-1, :])*np.exp(-Konstant*Lpipe) + T[nt-1, :] )
+            ecool[nt-1, :] = Cn * ( dotmCH2O * cpH2O * (Two[nt-1, :] - TinCH2O) / (Dx * Dy * dz) )
+            coolFlag = 1
+          elif np.max(T[nt-1, :]) < TeC:
+            # turn off
+            Two[nt-1, :] = np.nan
+            ecool[nt-1, :] = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+            coolFlag = 0
+          elif coolFlag == 1:
+            # if cooling is on
+            Two[nt-1, :] = Cn * ( (TinCH2O - T[nt-1, :])*np.exp(-Konstant*Lpipe) + T[nt-1, :] )
+            ecool[nt-1, :] = Cn * ( dotmCH2O * cpH2O * (Two[nt-1, :] - TinCH2O) / (Dx * Dy * dz) )
+        # else:
+          # Two[nt-1, :] = np.nan
+          # ecool = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
+
+
 
         # bottom adiabatic end; @ z=0
-        T[nt, 0]  = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] - (dt_s/(cv*rho))*ecool[0] + T[nt-1, 0]
-        # Tw[nt, 0] = dt_s * ( pipeConvCoeff*(T[nt-1, 0] - Tw[nt-1, 0]) + (dotm/(np.pi*(ripipe**2)*dz*rhoH2O))*(TinCH2O - Tw[nt-1, 0]) ) + Tw[nt-1, 0]
-        Tw[nt, 0] = (dotm*cvH2O*TinCH2O - UApipe*T[nt-1, 0]) / (-UApipe + dotm*cvH2O)
-        Tw[nt, 0] = Cn[0] * Tw[nt, 0]
+        T[nt, 0]  = (dt_s*k/(rho*cv*dz**2))*(T[nt-1, 1] - T[nt-1, 0]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,0] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 0] - (dt_s/(cv*rho))*ecool[nt-1, 0] + T[nt-1, 0]
 
         # interior points
-        T[nt, 1:nImax:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:nImax-1:] - 2*T[nt-1, 1:nImax:] + T[nt-1, 2:nImax+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:nImax:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:nImax:] - (dt_s/(cv*rho))*ecool[1:nImax:] + T[nt-1, 1:nImax:]
-        # Tw[nt, 1:nImax:] = dt_s * ( pipeConvCoeff*(T[nt-1, 1:nImax:] - Tw[nt-1, 1:nImax:]) + (dotm/(np.pi*(ripipe**2)*dz*rhoH2O))*(Tw[nt-1, 0:nImax-1:] - Tw[nt-1, 1:nImax:]) ) + Tw[nt-1, 1:nImax:]
-        Tw[nt, 1:nImax:] = (dotm*cvH2O*Tw[nt-1, 0:nImax-1:] - UApipe*T[nt-1, 1:nImax:]) / (-UApipe + dotm*cvH2O)
-        Tw[nt, 1:nImax:] = Cn[1:nImax:] * Tw[nt, 1:nImax:]
+        T[nt, 1:nImax:] = (dt_s*k/(rho*cv*dz**2))*( T[nt-1, 0:nImax-1:] - 2*T[nt-1, 1:nImax:] + T[nt-1, 2:nImax+1:]) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1, 1:nImax:] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, 1:nImax:] - (dt_s/(cv*rho))*ecool[nt-1, 1:nImax:] + T[nt-1, 1:nImax:]
 
         # top end with convection boundary condition, @ z=z[Nn]
-        T[nt, nImax] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, nImax-1] - T[nt-1, nImax]) - hconv*(T[nt-1, nImax] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,nImax] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, nImax] - (dt_s/(cv*rho))*ecool[nImax] + T[nt-1, nImax]
-        # Tw[nt, nImax] = dt_s * ( pipeConvCoeff*(T[nt-1, nImax] - Tw[nt-1, nImax]) + (dotm/(np.pi*(ripipe**2)*dz*rhoH2O))*(Tw[nt-1, nImax-1] - Tw[nt-1, nImax]) ) + Tw[nt-1, nImax]
-        Tw[nt, nImax] = (dotm*cvH2O*Tw[nt-1, nImax] - UApipe*T[nt-1, nImax]) / (-UApipe + dotm*cvH2O)
-        Tw[nt, nImax] = Cn[nImax] * Tw[nt, nImax]
+        T[nt, nImax] = (dt_s/(cv*rho*dz))*( (k/dz)*(T[nt-1, nImax-1] - T[nt-1, nImax]) - hconv*(T[nt-1, nImax] - Tamb)) - (Ufwk*dt_s/(rho*cv))*(2/Dy + 2/Dx)*(T[nt-1,nImax] - Tamb) + (dt_s/(cv*rho))*egen[nt-1, nImax] - (dt_s/(cv*rho))*ecool[nt-1, nImax] + T[nt-1, nImax]
+
+
 
         # compute the adiabatic temperature
         Tadbtc[nt] = (egenadbtc[nt-1]/(rho*cv))*dt_s + Tadbtc[nt-1]
@@ -441,25 +468,39 @@ else:
     # after the calculation of the next egen, it's units are still W/m^-3,
     # but expressed as an ugly combination of other more basic units
     egen.ito(ureg.watt/ureg.meter**3)
+    ecool.ito(ureg.watt/ureg.meter**3)
     egenadbtc.ito(ureg.watt/ureg.meter**3)
     egenadbtcCuml.ito(ureg.joule/ureg.meter**3)
 
+    # when cooling was on, set Two to nan where there were no cooling pipes
+    Two[np.where(Two<0.1*ureg.degK)] = np.nan
+
     # some unit converstions for convenience
     T.ito(ureg.degC)
+    Two.ito(ureg.degC)
     Tadbtc.ito(ureg.degC)
     egenadbtcCuml.ito(ureg.MJ/ureg.meter**3)
     egenadbtcCumlTrap.ito(ureg.MJ/ureg.meter**3)
 
 
+    if ISCOOLED == 1:
+      iscooled = 'yes'
+      fileNameNote02 = 'IScooled_'
+    else:
+      iscooled = 'no'
+      fileNameNote02 = 'NOTcooled_'
+
 
     # bundle metadata into a Pandas dataframe...
     labels = ['date & time simulation ended',
               'CCT1D version',
+              'is cooled?',
               'note',
               'note',
               ]
     values = [timeOfThisSim,
               version,
+              iscooled,
               'column labels for the data matrices are the z (vertical) coordinates in meters',
               'row labels for the data matrices is time in hours'
              ]
@@ -497,11 +538,22 @@ else:
               'Dy_m (width of concrete, y-coordinate)',
               'Dx_m (width of concrete, x-coordinate)',
               'Ufwk_W/(m^2 K) (U-value of formwork+air film)',
-              'ECOOL_W/m^3 (volumetric cooling rate)',
               'timestep_h (time between siolution points)',
               'stopTime_h (end time of simulation)',
+              'cooled node start',
+              'cooled node spacing',
+              'number of cooled nodes',
+              'temperature above which cooling starts_degC',
+              'temperature below which cooling ends_degC',
+              'inner radius of cooling water pipe_m',
+              'outer radius of cooling water pipe_m',
+              'thermal conductivity of pipe_W/(m K)',
+              'length of pipe_m',
+              'mass flow rate of water_kg/s',
+              'cooling water inlet temperature_degC',
               'Total adiabatic energy released_MJ/m^3'
               ]
+
     values = [Vunit.magnitude,
               mC.magnitude,
               cvC.magnitude,
@@ -529,9 +581,19 @@ else:
               Dy.magnitude,
               Dx.magnitude,
               Ufwk.magnitude,
-              ECOOL.magnitude,
               dt_h.magnitude,
               tend_h,
+              CnStrt,
+              CnSpcng,
+              NCn,
+              TsC.magnitude-273,
+              TeC.magnitude-273,
+              ripipe.magnitude,
+              ropipe.magnitude,
+              kpipe.magnitude,
+              Lpipe.magnitude,
+              dotmCH2O.magnitude,
+              TinCH2O.magnitude-273,
               egenadbtcTot.magnitude
               ]
     inputs = list(zip(labels,values))
@@ -543,9 +605,14 @@ else:
     # ...convert temperature data to a Pandas dataframe... 
     df_T = pd.DataFrame(T.magnitude, index=t_h, columns=z)
 
+    # ...convert cooling water outlet temperatures to a Pandas dataframe...
+    df_Two = pd.DataFrame(Two.magnitude, index=t_h, columns=z)
 
     # ...convert egen data to a Pandas dataframe...
     df_egen = pd.DataFrame(egen.magnitude, index=t_h, columns=z)
+
+     # ...convert ecool data to a Pandas dataframe...
+    df_ecool = pd.DataFrame(ecool.magnitude, index=t_h, columns=z)
 
     # ...convert dotqV data to a Pandas dataframe
     # df_dotqV = pd.DataFrame(dotqV.magnitude, index=t_h, columns=z)
@@ -563,13 +630,15 @@ else:
 
 
     # ...and store results in an Excel file
-    fileNameBase = 'CCT1D_Output_'+fileNameNote
+    fileNameBase = 'CCT1D_Output_'+fileNameNote01+fileNameNote02
     fileName = fileNameBase+timeOfThisSim+'.xlsx'
     with pd.ExcelWriter(fileName) as writer:
         df_metadata.to_excel(writer, sheet_name='Metadata')
         df_inputs.to_excel(writer, sheet_name='Inputs')
         df_T.to_excel(writer, sheet_name='SimTemps_DegC')
+        df_Two.to_excel(writer, sheet_name='CoolingH2O_OutletTemps_DegC')
         df_egen.to_excel(writer, sheet_name='egen_Wm-3')
+        df_ecool.to_excel(writer, sheet_name='ecool_Wm-3')
         # df_dotqV.to_excel(writer, sheet_name='dotqV_Wm-3')
         df_dotq.to_excel(writer, sheet_name='dotqV_Wm-2')
         df_adbtc.to_excel(writer, sheet_name='AdiabaticConds')
