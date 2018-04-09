@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=4.0
+version=4.01
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -144,6 +144,13 @@ Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of 
 # User inputs
 # -----------------------------------
 
+
+# Some commentary on a simulation; to be part of output data file name and metadata
+#  fileNameNote is a short descriptor of a simulation
+fileNameNote='BaselineMixGDOTAA+_noCooling'
+
+
+
 # Concrete's component masses and thermal parameters
 mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3 of concrete)
 cvC   = 840 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of cement
@@ -160,11 +167,11 @@ ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductiv
 
 # Cement hydration parameters
 Hcem    = 468.43 * (ureg.joule/ureg.gram)           # heat of hydration of cement
-Hu      = 468 * (ureg.joule/ureg.gram)              # total (ultimate) heat of hydration of cement+scm
-Ea      = 33826 * (ureg.joule/ureg.mole)            # activation energy
-alphau  = 0.742                                     # ultimate degree of hydration (is a fraction, thus unitless)
-tau_h   = 17.483 * (ureg.hour)                      # hydration time parameter (controls time when egen starts to accelerate)
-beta    = 1.065                                     # hydration shape parameter (unitless; controls rate of reaction)
+Hu      = 468.43 * (ureg.joule/ureg.gram)           # total (ultimate) heat of hydration of cement+scm
+Ea      = 34459 * (ureg.joule/ureg.mole)            # activation energy
+alphau  = 0.744                                     # ultimate degree of hydration (is a fraction, thus unitless)
+tau_h   = 17.150 * (ureg.hour)                      # hydration time parameter (controls time when egen starts to accelerate)
+beta    = 1.042                                     # hydration shape parameter (unitless; controls rate of reaction)
 Cc      = mC/Vunit                                  # cementitious material content per unit volume of concrete
 Cc.ito(ureg.gram/ureg.meter**3)
 
@@ -207,7 +214,7 @@ for ni in range(0, NCn):
 ripipe  = 0.01 * ureg.meter                        # inner radius of cooling pipe
 ropipe  = 0.011 * ureg.meter                        # outer radius of cooling pipe
 kpipe   = 60 * (ureg.watt/ureg.meter/ureg.degK)     # thermal conductivity of pipe
-hpipe   = 600 * (ureg.watt/ureg.meter**2/ureg.degK) # convection coefficient of pipe
+hpipe   = 600 * (ureg.watt/ureg.meter**2/ureg.degK) # convection coefficient inside pipe
 rhoH2O  = 1 * (ureg.kg/ureg.meter**3)               # density of water
 cpH2O   = cvH2O                                     # constant pressure specific heat of water = constant volume specific heat
 dotmCH2O= 0.15 * (ureg.kg/ureg.second)                 # mass flow rate of cooling water when cooling is on  
@@ -556,7 +563,7 @@ else:
 
 
     # ...and store results in an Excel file
-    fileNameBase = 'CCT1D_SimRslt_'
+    fileNameBase = 'CCT1D_Output_'+fileNameNote
     fileName = fileNameBase+timeOfThisSim+'.xlsx'
     with pd.ExcelWriter(fileName) as writer:
         df_metadata.to_excel(writer, sheet_name='Metadata')
