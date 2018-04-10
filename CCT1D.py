@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=5.01
+version=5.02
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -53,22 +53,28 @@ version=5.01
 # 
 # Notes on the cooling system
 # .......................................................
-# A simple cooling scheme is implemented: it incorporates water flow through a pipe along
-# the z-direction.  Pipe diameters and materials, water inlet temperatures and flow
-# rates are specified.
+# A simple cooling scheme is implemented: it incorporates water flow through a pipes along
+# the direction perpendicular to heat transfer, i.e. pipe is in the x- and y- directions.  
+# Pipe diameter, length, material, water inlet temperatures, and mass flow rates are specified
 # 
-# In version 3.1 - the simple prescribed rate of (volumetric) cooling - one can specify
-# the nodes to which cooling is applied.  I.e. you can cool all nodes, cool only nodes
-# in the "core", cool every other node, etc.
+# The cooling is calculated by:
+#   1. first assuming that the piped water flows through an isothermal "layer":
+#      everywhere the pipe is in contact with concrete whose temperature
+#      does not vary along the length of the pipe.
+#   2. this situation has an exact solution for water temperature along the
+#      length of the pipe; this exact solution is used to calculate cooling
+#      water outlet temperatures at the end of the pipe
+#   3. the volumetric rate of cooling is then calculated as:
 # 
-# In this version, the pipe is assumed to have its inlet at the bottom (z=0)
-# and runs through each node sequentially up to a user-specified outlet node
+#           (mass flow rate) * (water specific heat) * (outlet temperature - inlet temperature)
+#           -----------------------------------------------------------------------------------
+#                                    volume of an isothermal layer
 # 
-# It is important to note that in this quasi-one-dimensional model, the assumption that
-# the layers of concrete (represented by nodes) are isothermal in the x- and y-directions
-# is in conflict with the cooling model: in reality there would be a temperature gradient
-# between the concrete and the pipe, but in this model there is no such gradient by construction.  
-# Therefore when cooling is used, the x- and y-size of the concrete be limited.
+#      this volumetric cooling rate is then incorporated into the governing equation (the heat
+#      diffusion equation) as a kind of "negative egen"
+# 
+# One can specify the nodes to which cooling is applied, i.e. you can cool all nodes, 
+# cool only nodes in the "core", cool every other node, etc.
 # 
 # This cooling model is also a quasi-steady-state one; there is no 'dynamics' involved,
 # as dTw/dt - the rate of change of a control volume within the pipe, through which
@@ -147,7 +153,7 @@ Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of 
 
 # Some commentary on a simulation; to be part of output data file name and metadata
 #  fileNameNote is a short descriptor of a simulation
-fileNameNote01 = 'CODETEST_'
+fileNameNote01 = 'GDOT_AA+_BaselineMix_Cu_'
 
 
 
@@ -188,11 +194,11 @@ hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient of 
 
 # Geometry, etc. parameters
 zmax  = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
-Nn    = 29                                           # number of nodes (use Nn = 29 for zmax = 1.8288m)
+Nn    = 49                                           # number of nodes (use Nn = 29 for zmax = 1.8288m)
 nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
 dz    = zmax/Nn                                      # thickness of each 'layer'
 z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
-Dy    = 0.5 * ureg.meter                            # width of concrete in y-direction (=1.219 in full scale experiments)
+Dy    = 1.2192 * ureg.meter                          # width of concrete in y-direction (=1.219 in full scale experiments)
 Dx    = Dy                                           # width of concrete in x-direction (=1.219 in full scale experiments)
 Ufwk  = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
 Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
@@ -203,16 +209,16 @@ Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-dire
 # Cooling system parameters
 ISCOOLED= 1                                         # = 0 for no cooling; = 1 for active cooling
 
-CnStrt  = 0                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
-CnSpcng = 3                                         # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
-NCn     = 5                                         # number of cooled nodes
-TsC     = Q_(60+273.15, ureg.degK)                  # temperature above which cooling starts
-TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
+CnStrt  = 5                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
+CnSpcng = 11                                        # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
+NCn     = 4                                         # number of cooled nodes
+TsC     = Q_(59+273.15, ureg.degK)                  # temperature above which cooling starts
+TeC     = Q_(56+273.15, ureg.degK)                  # temperature below which cooling ends
 coolFlag= 0                                         # control variable: 0 is no cooling, 1 is turn cooling on
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
 ripipe  = 0.004572 * ureg.meter                     # inner radius of cooling pipe
-ropipe  = 0.00635 * ureg.meter                     # outer radius of cooling pipe
-kpipe   = 0.5 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
+ropipe  = 0.00635 * ureg.meter                      # outer radius of cooling pipe
+kpipe   = 385 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
 Lpipe   = 5.5 * ureg.meter                          # length of cooling pipes
 dotmCH2O= 0.15 * (ureg.kg/ureg.second)              # mass flow rate of cooling water when cooling is on  
 TinCH2O = Q_(20+273.15, ureg.degK)                  # inlet temperature of cooling water
@@ -235,7 +241,7 @@ nuH2O   = 0.000001004 * (ureg.meter**2/ureg.second) # kinematic viscosity of wat
 
 # Simulation parameters
 dt_h   = 0.05                                       # timestep, hours
-tend_h = 72                                        # simulation end time, hours (normatively 175)
+tend_h = 175                                        # simulation end time, hours (normatively 175)
 t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
 
 
@@ -380,7 +386,7 @@ else:
         # check if we need to actively cool; if so, turn it on!
         if ISCOOLED == 1: 
           if np.max(T[nt-1, :]) > TsC:
-            # turn on
+            # turn on; cooling water outlet temperature is calculated using the exact solution 
             Two[nt-1, :] = Cn * ( (TinCH2O - T[nt-1, :])*np.exp(-Konstant*Lpipe) + T[nt-1, :] )
             ecool[nt-1, :] = Cn * ( dotmCH2O * cpH2O * (Two[nt-1, :] - TinCH2O) / (Dx * Dy * dz) )
             coolFlag = 1
@@ -390,7 +396,7 @@ else:
             ecool[nt-1, :] = np.zeros(Nn) * (ureg.watt/ureg.meter**3)
             coolFlag = 0
           elif coolFlag == 1:
-            # if cooling is on
+            # if cooling is on; cooling water outlet temperature is calculated using the exact solution 
             Two[nt-1, :] = Cn * ( (TinCH2O - T[nt-1, :])*np.exp(-Konstant*Lpipe) + T[nt-1, :] )
             ecool[nt-1, :] = Cn * ( dotmCH2O * cpH2O * (Two[nt-1, :] - TinCH2O) / (Dx * Dy * dz) )
         # else:
@@ -485,7 +491,7 @@ else:
 
     if ISCOOLED == 1:
       iscooled = 'yes'
-      fileNameNote02 = 'IScooled_'
+      fileNameNote02 = 'cooled_'
     else:
       iscooled = 'no'
       fileNameNote02 = 'NOTcooled_'
