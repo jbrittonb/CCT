@@ -153,16 +153,16 @@ Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of 
 
 # Some commentary on a simulation; to be part of output data file name and metadata
 #  fileNameNote is a short descriptor of a simulation
-fileNameNote01 = 'GDOT_AA+_BaselineMix_Cu_'
+fileNameNote01 = 'GDOT_AA+_CaissonMix_PEX_'
 
 
 
 # Concrete's component masses and thermal parameters
-mC    = 413.513 * (ureg.kg)                         # mass of cement (per m^3 of concrete)
+mC    = 315 * (ureg.kg)                             # mass of cement (per m^3 of concrete)
 cvC   = 840 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of cement
-mAg   = 1761 * (ureg.kg)                            # mass of aggregate, coarse and fine (per m^3 of concrete)
+mAg   = 1769 * (ureg.kg)                            # mass of aggregate, coarse and fine (per m^3 of concrete)
 cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # constant volume specific heat of aggregate; assume coarse and fine are equal
-mH2O  = 183.9 * (ureg.kg)                           # mass of water (per m^3 of concrete)
+mH2O  = 189 * (ureg.kg)                             # mass of water (per m^3 of concrete)
 cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # constant volume specific heat of water
 mCnc  = mC + mAg + mH2O                             # mass of concrete
 rho   = mCnc/Vunit                                  # density of concrete
@@ -174,27 +174,27 @@ ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductiv
 # Cement hydration parameters
 Hcem    = 468.43 * (ureg.joule/ureg.gram)           # heat of hydration of cement
 Hu      = 468.43 * (ureg.joule/ureg.gram)           # total (ultimate) heat of hydration of cement+scm
-Ea      = 34459 * (ureg.joule/ureg.mole)            # activation energy
-alphau  = 0.744                                     # ultimate degree of hydration (is a fraction, thus unitless)
-tau_h   = 17.150 * (ureg.hour)                      # hydration time parameter (controls time when egen starts to accelerate)
-beta    = 1.042                                     # hydration shape parameter (unitless; controls rate of reaction)
+Ea      = 39697 * (ureg.joule/ureg.mole)            # activation energy
+alphau  = 0.766                                     # ultimate degree of hydration (is a fraction, thus unitless)
+tau_h   = 14.59 * (ureg.hour)                       # hydration time parameter (controls time when egen starts to accelerate)
+beta    = 0.87                                      # hydration shape parameter (unitless; controls rate of reaction)
 Cc      = mC/Vunit                                  # cementitious material content per unit volume of concrete
 Cc.ito(ureg.gram/ureg.meter**3)
 
 
 
 
-# Boundary conditions
-Tinit = Q_(13.333+273.15, ureg.degK)                # initial temperature
-Tamb  = Q_(13.333+273.15, ureg.degK)                # ambient temperature (20.2)
+# Boundary and initial conditions
+Tinit = Q_(14+273.15, ureg.degK)                # initial temperature
+Tamb  = Q_(20+273.15, ureg.degK)                # ambient temperature (20.2)
 hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient of environment
 
 
 
 
 # Geometry, etc. parameters
-zmax  = 1.8288                                       # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
-Nn    = 49                                           # number of nodes (use Nn = 29 for zmax = 1.8288m)
+zmax  = 1.8288                                      # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
+Nn    = 49                                           # number of nodes (use Nn = 29 - or 49 if cooling pipes) for zmax = 1.8288m)
 nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
 dz    = zmax/Nn                                      # thickness of each 'layer'
 z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
@@ -212,19 +212,20 @@ ISCOOLED= 1                                         # = 0 for no cooling; = 1 fo
 CnStrt  = 5                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
 CnSpcng = 11                                        # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
 NCn     = 4                                         # number of cooled nodes
-TsC     = Q_(59+273.15, ureg.degK)                  # temperature above which cooling starts
-TeC     = Q_(56+273.15, ureg.degK)                  # temperature below which cooling ends
+TsC     = Q_(48.9+273.15, ureg.degK)                  # temperature above which cooling starts
+TeC     = Q_(48.5+273.15, ureg.degK)                  # temperature below which cooling ends
 coolFlag= 0                                         # control variable: 0 is no cooling, 1 is turn cooling on
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
 ripipe  = 0.004572 * ureg.meter                     # inner radius of cooling pipe
 ropipe  = 0.00635 * ureg.meter                      # outer radius of cooling pipe
-kpipe   = 385 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
+kpipe   = 0.5 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
 Lpipe   = 5.5 * ureg.meter                          # length of cooling pipes
 dotmCH2O= 0.15 * (ureg.kg/ureg.second)              # mass flow rate of cooling water when cooling is on  
-TinCH2O = Q_(20+273.15, ureg.degK)                  # inlet temperature of cooling water
+TinCH2O = Q_(17+273.15, ureg.degK)                  # inlet temperature of cooling water
 
-for ni in range(0, NCn):
-  Cn[CnStrt + ni*CnSpcng] = 1
+if ISCOOLED == 1:
+    for ni in range(0, NCn):
+        Cn[CnStrt + ni*CnSpcng] = 1
 
 
 
