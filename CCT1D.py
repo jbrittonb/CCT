@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=5.02
+version=5.1
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -143,6 +143,14 @@ Rgas = 8.314 * (ureg.joule/ureg.mole/ureg.degK)     # gas constant
 Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of concrete; shouldn't need to change this
 
 
+# properties of water
+rhoH2O  = 1000 * (ureg.kg/ureg.meter**3)            # density of water
+cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # constant volume specific heat of water
+cpH2O   = cvH2O                                     # constant pressure specific heat of water = constant volume specific heat
+PrH2O   = 7                                         # Prandtl number of water
+kH2O    = 0.598 * (ureg.watt/ureg.meter/ureg.degK)  # thermal conductivity of water
+nuH2O   = 0.000001004 * (ureg.meter**2/ureg.second) # kinematic viscosity of water
+
 
 
 
@@ -153,96 +161,87 @@ Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of 
 
 # Some commentary on a simulation; to be part of output data file name and metadata
 #  fileNameNote is a short descriptor of a simulation
-fileNameNote01 = 'GDOT_AA+_CaissonMix_PEX_'
+# fileNameNote01 = 'GDOT_AA+_CaissonMix_PEX_'
+
+ 
+# Read in fileNameNote, concrete masses, thermal parameters, and cement hydration parameters from external file
+inputFile = 'Revised_AA+_ qBaseline_update01.py'
+# inputFile = 'Revised_AA+_45percent_FlyAsh.py'
+# inputFile = 'Revised_AA+_FA-F_and_Slag.py'
+# inputFile = 'Revised_AA+_40micron_Limestone_update01.py'
+# inputFile = 'Revised_AA+_Coarse_Cement.py'
+# inputFile = 'Revised_AA+_25percent_FlyAsh_update01.py'
+exec(compile(source=open(inputFile).read(), filename=inputFile, mode='exec'))
 
 
+# Want to specify the specific heat without computing from individual concrete components or estimating the evolution of specific heat?
+# Then set the variable below to 1
+SPECIFYSPECIFICHEAT = 0
+if SPECIFYSPECIFICHEAT == 1:
+    cv = 880 * (ureg.joule/ureg.kg/ureg.degK) 
+else:
+    cv = (1/mCnc) * (mC*cvC + mAg*cvAg + mH2O*cvH2O)     # initial specific heat
 
-# Concrete's component masses and thermal parameters
-mC    = 315 * (ureg.kg)                             # mass of cement (per m^3 of concrete)
-cvC   = 840 * (ureg.joule/ureg.kg/ureg.degK)        # specific heat of cement
-mAg   = 1769 * (ureg.kg)                            # mass of aggregate, coarse and fine (per m^3 of concrete)
-cvAg  = 770 * (ureg.joule/ureg.kg/ureg.degK)        # constant volume specific heat of aggregate; assume coarse and fine are equal
-mH2O  = 189 * (ureg.kg)                             # mass of water (per m^3 of concrete)
-cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # constant volume specific heat of water
-mCnc  = mC + mAg + mH2O                             # mass of concrete
-rho   = mCnc/Vunit                                  # density of concrete
-ku    = 1.66 * (ureg.watt/ureg.meter/ureg.degK)     # ultimate thermal conductivity at fully hydrated condition
-
-
-
-
-# Cement hydration parameters
-Hcem    = 468.43 * (ureg.joule/ureg.gram)           # heat of hydration of cement
-Hu      = 468.43 * (ureg.joule/ureg.gram)           # total (ultimate) heat of hydration of cement+scm
-Ea      = 39697 * (ureg.joule/ureg.mole)            # activation energy
-alphau  = 0.766                                     # ultimate degree of hydration (is a fraction, thus unitless)
-tau_h   = 14.59 * (ureg.hour)                       # hydration time parameter (controls time when egen starts to accelerate)
-beta    = 0.87                                      # hydration shape parameter (unitless; controls rate of reaction)
-Cc      = mC/Vunit                                  # cementitious material content per unit volume of concrete
-Cc.ito(ureg.gram/ureg.meter**3)
-
+cvi = cv
 
 
 
 # Boundary and initial conditions
-Tinit = Q_(14+273.15, ureg.degK)                # initial temperature
-Tamb  = Q_(20+273.15, ureg.degK)                # ambient temperature (20.2)
-hconv = 8 * (ureg.watt/ureg.meter**2/ureg.degK)     # convection coefficient of environment
+Tinit = Q_(29.44+273.15, ureg.degK)                 # initial temperature
+Tamb  = Q_(23.89+273.15, ureg.degK)                 # ambient temperature (20.2)
+hconv = 150 * (ureg.watt/ureg.meter**2/ureg.degK)   # convection coefficient of environment
 
 
 
 
 # Geometry, etc. parameters
-zmax  = 1.8288                                      # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
+zmax  =  1.8288                                         # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
 Nn    = 49                                           # number of nodes (use Nn = 29 - or 49 if cooling pipes) for zmax = 1.8288m)
 nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
 dz    = zmax/Nn                                      # thickness of each 'layer'
 z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
 Dy    = 1.2192 * ureg.meter                          # width of concrete in y-direction (=1.219 in full scale experiments)
 Dx    = Dy                                           # width of concrete in x-direction (=1.219 in full scale experiments)
-Ufwk  = 0.181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
+Ufwk  = 0.0181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
 Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
 
 
 
 
 # Cooling system parameters
-ISCOOLED= 1                                         # = 0 for no cooling; = 1 for active cooling
+ISCOOLED= 0                                         # = 0 for no cooling; = 1 for active cooling
 
 CnStrt  = 5                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
 CnSpcng = 11                                        # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
 NCn     = 4                                         # number of cooled nodes
-TsC     = Q_(48.9+273.15, ureg.degK)                  # temperature above which cooling starts
-TeC     = Q_(48.5+273.15, ureg.degK)                  # temperature below which cooling ends
-coolFlag= 0                                         # control variable: 0 is no cooling, 1 is turn cooling on
+TsC     = Q_(58+273.15, ureg.degK)                  # temperature above which cooling starts
+TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
+coolFlag= 1                                         # internal control variable: 0 is no cooling, 1 is turn cooling on
 Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
 ripipe  = 0.004572 * ureg.meter                     # inner radius of cooling pipe
-ropipe  = 0.00635 * ureg.meter                      # outer radius of cooling pipe
+ropipe  = 0.006350 * ureg.meter                      # outer radius of cooling pipe
 kpipe   = 0.5 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
 Lpipe   = 5.5 * ureg.meter                          # length of cooling pipes
-dotmCH2O= 0.15 * (ureg.kg/ureg.second)              # mass flow rate of cooling water when cooling is on  
-TinCH2O = Q_(17+273.15, ureg.degK)                  # inlet temperature of cooling water
+dotmCH2O= 0.107 * (ureg.kg/ureg.second)             # mass flow rate of cooling water when cooling is on  
+TinCH2O = Q_(13.3+273.15, ureg.degK)                # inlet temperature of cooling water
 
 if ISCOOLED == 1:
     for ni in range(0, NCn):
         Cn[CnStrt + ni*CnSpcng] = 1
 
-
-
-
-# properties of water
-rhoH2O  = 1000 * (ureg.kg/ureg.meter**3)            # density of water
-cpH2O   = cvH2O                                     # constant pressure specific heat of water = constant volume specific heat
-PrH2O   = 7                                         # Prandtl number of water
-kH2O    = 0.598 * (ureg.watt/ureg.meter/ureg.degK)  # thermal conductivity of water
-nuH2O   = 0.000001004 * (ureg.meter**2/ureg.second) # kinematic viscosity of water
+if ISCOOLED == 1:
+  iscooled = 'yes'
+  fileNameNote02 = 'cooled_3-8ths_PEX_'
+else:
+  iscooled = 'no'
+  fileNameNote02 = 'NOTcooled_ScenarioL_'
 
 
 
 
 # Simulation parameters
 dt_h   = 0.05                                       # timestep, hours
-tend_h = 175                                        # simulation end time, hours (normatively 175)
+tend_h = 204                                        # simulation end time, hours (normatively 175)
 t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
 
 
@@ -265,8 +264,6 @@ dt_s  = dt_h.to(ureg.second)
 
 
 # A little prep work
-cv = (1/mCnc) * (mC*cvC + mAg*cvAg + mH2O*cvH2O)     # initial specific heat
-cvi = cv
 thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
@@ -442,8 +439,9 @@ else:
 
         # some stuff for the next time step
         k = ku*(1.33 - 0.33*np.average(alpha))
-        coeff = (8.4*(Tinit_degC.magnitude) + 339) * ((ureg.joule/ureg.kg/ureg.degK))
-        cv = (1/mCnc) * (mC*np.average(alpha)*coeff + mC*(1-np.average(alpha))*cvC + mAg*cvAg + mH2O*cvH2O)
+        if SPECIFYSPECIFICHEAT == 0:
+            coeff = (8.4*(Tinit_degC.magnitude) + 339) * ((ureg.joule/ureg.kg/ureg.degK))
+            cv = (1/mCnc) * (mC*np.average(alpha)*coeff + mC*(1-np.average(alpha))*cvC + mAg*cvAg + mH2O*cvH2O)
 
 
 
@@ -482,7 +480,7 @@ else:
     # when cooling was on, set Two to nan where there were no cooling pipes
     Two[np.where(Two<0.1*ureg.degK)] = np.nan
 
-    # some unit converstions for convenience
+    # some unit conversions for convenience
     T.ito(ureg.degC)
     Two.ito(ureg.degC)
     Tadbtc.ito(ureg.degC)
@@ -490,12 +488,7 @@ else:
     egenadbtcCumlTrap.ito(ureg.MJ/ureg.meter**3)
 
 
-    if ISCOOLED == 1:
-      iscooled = 'yes'
-      fileNameNote02 = 'cooled_'
-    else:
-      iscooled = 'no'
-      fileNameNote02 = 'NOTcooled_'
+
 
 
     # bundle metadata into a Pandas dataframe...
@@ -512,7 +505,7 @@ else:
               'row labels for the data matrices is time in hours'
              ]
     metadata = list(zip(labels,values))
-    df_metadata = df_inputs = pd.DataFrame(data = metadata, columns=['Parameter', 'Value'])
+    df_metadata = pd.DataFrame(data = metadata, columns=['Parameter', 'Value'])
 
 
 
@@ -547,6 +540,7 @@ else:
               'Ufwk_W/(m^2 K) (U-value of formwork+air film)',
               'timestep_h (time between siolution points)',
               'stopTime_h (end time of simulation)',
+              'is cooled?',
               'cooled node start',
               'cooled node spacing',
               'number of cooled nodes',
@@ -590,17 +584,18 @@ else:
               Ufwk.magnitude,
               dt_h.magnitude,
               tend_h,
+              ISCOOLED,
               CnStrt,
               CnSpcng,
               NCn,
-              TsC.magnitude-273,
-              TeC.magnitude-273,
+              TsC.magnitude-273.15,
+              TeC.magnitude-273.15,
               ripipe.magnitude,
               ropipe.magnitude,
               kpipe.magnitude,
               Lpipe.magnitude,
               dotmCH2O.magnitude,
-              TinCH2O.magnitude-273,
+              TinCH2O.magnitude-273.15,
               egenadbtcTot.magnitude
               ]
     inputs = list(zip(labels,values))
