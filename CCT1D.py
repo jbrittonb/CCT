@@ -5,7 +5,7 @@
 # Georgia Tech School of Architecture, College of Design
 # 
 # CCT1D.py - Concrete Curing Thermal 1D
-version=5.1
+version=5.11
 # 
 # A FTCS (forward time, centered space) finite-difference scheme to 
 # estimate the thermal history of quasi-one-dimensional concrete curing
@@ -143,6 +143,7 @@ Rgas = 8.314 * (ureg.joule/ureg.mole/ureg.degK)     # gas constant
 Vunit = 1 * (ureg.meter**3)                         # a notional unit volume of concrete; shouldn't need to change this
 
 
+
 # properties of water
 rhoH2O  = 1000 * (ureg.kg/ureg.meter**3)            # density of water
 cvH2O = 4187 * (ureg.joule/ureg.kg/ureg.degK)       # constant volume specific heat of water
@@ -157,21 +158,78 @@ nuH2O   = 0.000001004 * (ureg.meter**2/ureg.second) # kinematic viscosity of wat
 # -----------------------------------
 # User inputs
 # -----------------------------------
-
-
-# Some commentary on a simulation; to be part of output data file name and metadata
-#  fileNameNote is a short descriptor of a simulation
-# fileNameNote01 = 'GDOT_AA+_CaissonMix_PEX_'
-
  
 # Read in fileNameNote, concrete masses, thermal parameters, and cement hydration parameters from external file
-inputFile = 'Revised_AA+_ qBaseline_update01.py'
-# inputFile = 'Revised_AA+_45percent_FlyAsh.py'
-# inputFile = 'Revised_AA+_FA-F_and_Slag.py'
-# inputFile = 'Revised_AA+_40micron_Limestone_update01.py'
-# inputFile = 'Revised_AA+_Coarse_Cement.py'
-# inputFile = 'Revised_AA+_25percent_FlyAsh_update01.py'
-exec(compile(source=open(inputFile).read(), filename=inputFile, mode='exec'))
+# .............................................................................................................
+# concreteFile = 'AsOriginallySimulated_AA+_Baseline_MidscaleExp_Jan2017.py'
+# concreteFile = 'Possible_AA+_Baseline_ZARIBAF_MidscaleExp_Jan2017.py'
+# concreteFile = 'Possible_AA+_Baseline_MidscaleExp_Jan2017.py'
+concreteFile = 'Revised_AA+_Baseline_update01.py'
+# concreteFile = 'Revised_AA+_45percent_FlyAsh.py'
+# concreteFile = 'Revised_AA+_FA-F_and_Slag.py'
+# concreteFile = 'Revised_AA+_40micron_Limestone_update01.py'
+# concreteFile = 'Revised_AA+_Coarse_Cement.py'
+# concreteFile = 'Revised_AA+_25percent_FlyAsh_update01.py'
+exec(compile(source=open(concreteFile).read(), filename=concreteFile, mode='exec'))
+
+
+
+# Read in boundary and initial conditions
+# .......................................
+# icBcFile = 'Scenario_PhaseI_FirstMidscaleExp.py'
+# icBcFile = 'Scenario_PhaseI_SecondMidscaleExp.py'
+# icBcFile = 'ScenarioA.py'
+# icBcFile = 'ScenarioB.py'
+# icBcFile = 'ScenarioC.py'
+# icBcFile = 'ScenarioD.py'
+icBcFile = 'ScenarioE.py'
+# icBcFile = 'ScenarioF.py'
+# icBcFile = 'ScenarioG.py'
+# icBcFile = 'ScenarioH.py'
+exec(compile(source=open(icBcFile).read(), filename=icBcFile, mode='exec'))
+
+
+
+# Read in configuration parameters (geometry, formwork U-value, node spaceing, etc.)
+# ..................................................................................
+# configFile = 'Config_MidscaleExpNoCool.py'
+# configFile = 'Config_MidscaleExpCool.py'
+# configFile = 'Config_.15m.py'
+# configFile = 'Config_.3m.py'
+# configFile = 'Config_.6m.py'
+# configFile = 'Config_.9m.py'
+# configFile = 'Config_1.2m.py'
+# configFile = 'Config_1.5m.py'
+configFile = 'Config_1.8m.py'
+# configFile = 'Config_2.1m.py'
+# configFile = 'Config_2.4m.py'
+# configFile = 'Config_2.7m.py'
+# configFile = 'Config_3.0m.py'
+exec(compile(source=open(configFile).read(), filename=configFile, mode='exec'))
+
+
+
+# Read in cooling system parameters
+# .................................
+ISCOOLED = 0                                        # = 0 for no cooling; = 1 for active cooling
+if ISCOOLED == 1:
+    iscooled = 'yes'
+    coolingFile = 'PhaseI_MidscaleExpCooling.py'
+    exec(compile(source=open(coolingFile).read(), filename=coolingFile, mode='exec'))
+    for ni in range(0, NCn):
+        Cn[CnStrt + ni*CnSpcng] = 1
+else:
+    iscooled = 'no'
+    coolingFile = 'NoCooling.py'
+    exec(compile(source=open(coolingFile).read(), filename=coolingFile, mode='exec'))
+
+
+
+# Simulation parameters
+dt_h   = 0.05                                       # timestep, hours
+tend_h = 175                                        # simulation end time, hours (normatively 175)
+t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
+
 
 
 # Want to specify the specific heat without computing from individual concrete components or estimating the evolution of specific heat?
@@ -183,70 +241,6 @@ else:
     cv = (1/mCnc) * (mC*cvC + mAg*cvAg + mH2O*cvH2O)     # initial specific heat
 
 cvi = cv
-
-
-
-# Boundary and initial conditions
-Tinit = Q_(29.44+273.15, ureg.degK)                 # initial temperature
-Tamb  = Q_(23.89+273.15, ureg.degK)                 # ambient temperature (20.2)
-hconv = 150 * (ureg.watt/ureg.meter**2/ureg.degK)   # convection coefficient of environment
-
-
-
-
-# Geometry, etc. parameters
-zmax  =  1.8288                                         # 'thickness' of the concrete; here using the z coordinate, meters (1.8288m is 6 ft.)
-Nn    = 49                                           # number of nodes (use Nn = 29 - or 49 if cooling pipes) for zmax = 1.8288m)
-nImax = Nn-1                                         # max. node index (we start counting at 0, so first node's index is 0, last node's is nImax)
-dz    = zmax/Nn                                      # thickness of each 'layer'
-z     = np.linspace(dz/2, zmax-dz/2, Nn) * ureg.meter# mesh points in space; z[0]=0 is the bottom, z[Nn] = zmax is the top
-Dy    = 1.2192 * ureg.meter                          # width of concrete in y-direction (=1.219 in full scale experiments)
-Dx    = Dy                                           # width of concrete in x-direction (=1.219 in full scale experiments)
-Ufwk  = 0.0181 * (ureg.watt/ureg.meter**2/ureg.degK)  # U-value of the formwork; includes convection of air film on outer side
-Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
-
-
-
-
-# Cooling system parameters
-ISCOOLED= 0                                         # = 0 for no cooling; = 1 for active cooling
-
-CnStrt  = 5                                         # cooled node start; e.g. CnStrt = 1 has the first cooled node at the second node from z=0
-CnSpcng = 11                                        # spacing between cooled nodes in increments of dz; e.g. CnSpcng = 2 gives 2*dz spacing between cooled nodes
-NCn     = 4                                         # number of cooled nodes
-TsC     = Q_(58+273.15, ureg.degK)                  # temperature above which cooling starts
-TeC     = Q_(55+273.15, ureg.degK)                  # temperature below which cooling ends
-coolFlag= 1                                         # internal control variable: 0 is no cooling, 1 is turn cooling on
-Cn      = np.zeros(Nn)                              # (binary) array indicating if node is cooled (1) or not (0)
-ripipe  = 0.004572 * ureg.meter                     # inner radius of cooling pipe
-ropipe  = 0.006350 * ureg.meter                      # outer radius of cooling pipe
-kpipe   = 0.5 * (ureg.watt/ureg.meter/ureg.degK)    # thermal conductivity of pipe
-Lpipe   = 5.5 * ureg.meter                          # length of cooling pipes
-dotmCH2O= 0.107 * (ureg.kg/ureg.second)             # mass flow rate of cooling water when cooling is on  
-TinCH2O = Q_(13.3+273.15, ureg.degK)                # inlet temperature of cooling water
-
-if ISCOOLED == 1:
-    for ni in range(0, NCn):
-        Cn[CnStrt + ni*CnSpcng] = 1
-
-if ISCOOLED == 1:
-  iscooled = 'yes'
-  fileNameNote02 = 'cooled_3-8ths_PEX_'
-else:
-  iscooled = 'no'
-  fileNameNote02 = 'NOTcooled_ScenarioL_'
-
-
-
-
-# Simulation parameters
-dt_h   = 0.05                                       # timestep, hours
-tend_h = 204                                        # simulation end time, hours (normatively 175)
-t_h    = np.linspace(0, tend_h, (tend_h/dt_h)+1) * ureg.hour
-
-
-
-
 
 
 
@@ -267,23 +261,38 @@ dt_s  = dt_h.to(ureg.second)
 thermalDiffusivity = ku*1.33/(cv*rho)                # initial thermal conductivity
 dz                 = z[1] - z[0]
 diffusionNumber    = thermalDiffusivity * dt_s / dz**2
+Biy   = Ufwk*(Dy/2)/ku                               # Biot number in the y-direction
 
 
 
-# calculate the convection coefficient inside the pipe (assuming "smooth" pipe)
-waterVelocity   = dotmCH2O / (rhoH2O * np.pi * ripipe**2)
-ReD             = waterVelocity * 2*ripipe / nuH2O
-frictionFactor  = (0.779 * np.log(ReD) - 1.64)**(-2)
-NuD             = ( (frictionFactor/8)*(ReD - 1000)*PrH2O ) / ( 1 + (12.7*np.sqrt(frictionFactor/8)) * (PrH2O**(2/3) - 1) )
-hpipe           = NuD * kH2O / (2*ripipe)
+if ISCOOLED == 1:
+    # calculate the convection coefficient inside the pipe (assuming "smooth" pipe)
+    waterVelocity   = dotmCH2O / (rhoH2O * np.pi * ripipe**2)
+    ReD             = waterVelocity * 2*ripipe / nuH2O
+    frictionFactor  = (0.779 * np.log(ReD) - 1.64)**(-2)
+    NuD             = ( (frictionFactor/8)*(ReD - 1000)*PrH2O ) / ( 1 + (12.7*np.sqrt(frictionFactor/8)) * (PrH2O**(2/3) - 1) )
+    hpipe           = NuD * kH2O / (2*ripipe)
+
+    # thermal "resistivity" of the pipe and cooling water flowing through it
+    resistTherm = (1/(hpipe*2*np.pi*ripipe)) + (np.log(ropipe/ripipe)/(2*np.pi*kpipe))
+    # for convenience, combine this with mass flow and specific heat of water
+    Konstant = 1 / (resistTherm * dotmCH2O * cpH2O)
+    # just cleaning up the units
+    Konstant.ito(1 / ureg.meter)  
+else:
+    # calculate the convection coefficient inside the pipe (assuming "smooth" pipe)
+    waterVelocity   = np.nan
+    ReD             = np.nan
+    frictionFactor  = np.nan
+    NuD             = np.nan
+    hpipe           = np.nan
+
+    # thermal "resistivity" of the pipe and cooling water flowing through it
+    resistTherm = np.nan
+    # for convenience, combine this with mass flow and specific heat of water
+    Konstant = np.nan
 
 
-# thermal "resistivity" of the pipe and cooling water flowing through it
-resistTherm = (1/(hpipe*2*np.pi*ripipe)) + (np.log(ropipe/ripipe)/(2*np.pi*kpipe))
-# for convenience, combine this with mass flow and specific heat of water
-Konstant = 1 / (resistTherm * dotmCH2O * cpH2O)
-# just cleaning up the units
-Konstant.ito(1 / ureg.meter)  
 
 
 
@@ -632,7 +641,7 @@ else:
 
 
     # ...and store results in an Excel file
-    fileNameBase = 'CCT1D_Output_'+fileNameNote01+fileNameNote02
+    fileNameBase = 'CCT1D_Output_'+fileNameNote01+fileNameNote02+fileNameNote03+fileNameNote04
     fileName = fileNameBase+timeOfThisSim+'.xlsx'
     with pd.ExcelWriter(fileName) as writer:
         df_metadata.to_excel(writer, sheet_name='Metadata')
